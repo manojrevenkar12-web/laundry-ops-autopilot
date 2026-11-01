@@ -1,0 +1,11 @@
+services:
+  autopilot:
+    build: .
+    ports: ["8000:8000"]
+    environment:
+      LOPS_LLM_MODE: ${LOPS_LLM_MODE:-offline}
+      LOPS_OPENROUTER_API_KEY: ${LOPS_OPENROUTER_API_KEY:-}
+      LOPS_OPENROUTER_MODEL: ${LOPS_OPENROUTER_MODEL:-anthropic/claude-sonnet-4.5}
+    volumes: ["autopilot-data:/data"]
+volumes:
+  autopilot-data:

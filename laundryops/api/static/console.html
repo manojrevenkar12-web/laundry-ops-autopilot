@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Laundry Ops Autopilot — Console</title>
+<style>
+  :root{--navy:#0f2a4a;--navy2:#163a66;--ink:#1b2430;--muted:#5b6775;--line:#e3e8ee;--bg:#f5f7fa;--card:#fff;
+        --ok:#1b7f4b;--warn:#b7791f;--bad:#b42318;--chip:#eef2f7;--mono:ui-monospace,SFMono-Regular,Menlo,monospace}
+  *{box-sizing:border-box}body{margin:0;font:14px/1.45 Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--ink);background:var(--bg)}
+  header{background:var(--navy);color:#fff;padding:14px 24px;display:flex;align-items:center;gap:16px}
+  header h1{font-size:16px;margin:0;font-weight:600;letter-spacing:.2px}header .sub{opacity:.75;font-size:12px}
+  header .spacer{flex:1}header button{background:#fff;color:var(--navy);border:0;border-radius:6px;padding:7px 12px;font-weight:600;cursor:pointer}
+  header button.ghost{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.4)}
+  main{padding:20px 24px;display:grid;grid-template-columns:1.6fr 1fr;gap:20px}
+  .kpis{grid-column:1/-1;display:grid;grid-template-columns:repeat(6,1fr);gap:12px}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .kpi .v{font-size:24px;font-weight:700;color:var(--navy)}.kpi .l{color:var(--muted);font-size:12px}
+  section{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;min-width:0}
+  section h2{font-size:13px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:0 0 10px}
+  table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:600;font-size:12px}tr.row{cursor:pointer}tr.row:hover{background:#f0f4f9}
+  .chip{display:inline-block;background:var(--chip);border-radius:999px;padding:1px 8px;font-size:11px;font-family:var(--mono)}
+  .ok{color:var(--ok);font-weight:600}.bad{color:var(--bad);font-weight:600}.warn{color:var(--warn);font-weight:600}
+  .sev-low{color:var(--ok)}.sev-medium{color:var(--warn)}.sev-high,.sev-critical{color:var(--bad);font-weight:700}
+  textarea,select,input{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit}
+  .btn{background:var(--navy2);color:#fff;border:0;border-radius:8px;padding:8px 12px;font-weight:600;cursor:pointer}
+  .reply{white-space:pre-wrap;background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:10px;font-size:13px}
+  .drawer{position:fixed;top:0;right:0;width:min(560px,100%);height:100%;background:#fff;border-left:1px solid var(--line);box-shadow:-8px 0 24px rgba(0,0,0,.08);padding:18px;overflow:auto;transform:translateX(100%);transition:.2s}
+  .drawer.open{transform:none}.drawer h3{margin:0 0 8px}.drawer .close{float:right;cursor:pointer;color:var(--muted)}
+  .audit li{font-family:var(--mono);font-size:12px;margin:3px 0;color:#2d3a4a}.audit b{color:var(--navy)}
+  .feed{max-height:520px;overflow:auto}.muted{color:var(--muted)}
+  @media (max-width:1000px){main{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(3,1fr)}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Laundry Ops Autopilot</h1><span class="sub" id="mode">—</span>
+  <span class="spacer"></span>
+  <button class="ghost" onclick="post('/demo/seed?n=120')">Seed demo (120 tickets)</button>
+  <button class="ghost" onclick="post('/fleet/dispatch')">Run fleet dispatch</button>
+  <button class="ghost" onclick="post('/fleet/proactive')">Proactive sweep</button>
+  <button class="ghost" onclick="post('/settlement/run')">Run settlement</button>
+  <button onclick="refresh()">Refresh</button>
+</header>
+<main>
+  <div class="kpis" id="kpis"></div>
+
+  <section>
+    <h2>Ticket feed</h2>
+    <div class="feed"><table id="tickets"><thead><tr><th>Time</th><th>Ticket</th><th>Lang</th><th>Intent</th><th>Outcome</th><th>ms</th></tr></thead><tbody></tbody></table></div>
+  </section>
+
+  <section>
+    <h2>Try a ticket</h2>
+    <label class="muted">Resident (demo user)</label>
+    <select id="user"></select>
+    <label class="muted" style="margin-top:8px;display:block">Message</label>
+    <textarea id="text" rows="4">Hallo, ich habe Waschmaschine 2 bezahlt aber die Tür bleibt verschlossen und nichts passiert.</textarea>
+    <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+      <button class="btn" onclick="sendTicket()">Send to agent</button>
+      <span class="muted" id="sendhint">Evidence, decision and reply appear in the drawer.</span>
+    </div>
+    <h2 style="margin-top:18px">Fleet health</h2>
+    <table id="fleet"><thead><tr><th>Machine</th><th>Site</th><th>Score</th><th>Severity</th><th>Signals</th></tr></thead><tbody></tbody></table>
+    <h2 style="margin-top:18px">Open faults &amp; SLA</h2>
+    <table id="faults"><thead><tr><th>Fault</th><th>Machine</th><th>Sev</th><th>Status</th><th>Ack due</th><th>Fix due</th><th></th></tr></thead><tbody></tbody></table>
+    <h2 style="margin-top:18px">Partner payouts</h2>
+    <table id="payouts"><thead><tr><th>Partner</th><th>Statement</th><th>Amount</th><th>E2E ref</th><th>Status</th></tr></thead><tbody></tbody></table>
+  </section>
+</main>
+
+<div class="drawer" id="drawer"><span class="close" onclick="drawer.classList.remove('open')">✕ close</span><div id="drawerBody"></div></div>
+
+<script>
+const $=s=>document.querySelector(s);const drawer=$('#drawer');
+const eur=c=>((c||0)/100).toFixed(2).replace('.',',')+' €';
+const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+async function get(u){const r=await fetch(u);if(!r.ok)throw new Error(await r.text());return r.json()}
+async function post(u,body){const r=await fetch(u,{method:'POST',headers:{'content-type':'application/json'},body:body?JSON.stringify(body):undefined});const j=await r.json().catch(()=>({}));await refresh();return j}
+async function refresh(){
+  const [h,m,t,f,fl,p,u]=await Promise.all([get('/health'),get('/metrics'),get('/tickets?limit=300'),get('/fleet/health'),get('/fleet/faults'),get('/settlement/payouts'),get('/demo/users?limit=40')]);
+  $('#mode').textContent=`triage: ${h.llm} · ${h.shadow?'SHADOW MODE (nothing executed)':'live execution'} · v${h.version}`;
+  const relayOk=m.relay_retriggers?Math.round(100*m.relay_retrigger_success/m.relay_retriggers):0;
+  $('#kpis').innerHTML=[['Tickets',m.tickets],['Deflection',(m.deflection_rate*100).toFixed(1)+'%'],['Refunds issued',`${m.refunds_issued} · ${eur(m.refund_total_cents)}`],
+    ['Relay re-triggers',`${m.relay_retriggers} · ${relayOk}% ok`],['Open faults',m.open_faults],['p50 handling',m.p50_handling_ms+' ms']]
+    .map(([l,v])=>`<div class="kpi"><div class="v">${v}</div><div class="l">${l}</div></div>`).join('');
+  $('#tickets tbody').innerHTML=t.map(x=>`<tr class="row" onclick="openTicket('${x.ticket_id}')"><td class="muted">${x.received_at.slice(11,19)}</td><td><span class="chip">${x.ticket_id}</span></td><td>${x.language}</td><td>${x.intent}</td><td class="${x.outcome==='auto_resolved'?'ok':'warn'}">${x.outcome}</td><td class="muted">${x.handled_in_ms}</td></tr>`).join('')||'<tr><td colspan=6 class="muted">No tickets yet — seed the demo or send one.</td></tr>';
+  $('#fleet tbody').innerHTML=f.slice(0,12).map(x=>`<tr><td><span class="chip">${x.machine_id}</span></td><td>${x.site_id}</td><td>${x.score}</td><td class="sev-${x.severity}">${x.severity}</td><td class="muted">${x.signals.join(', ')||'—'}</td></tr>`).join('');
+  $('#faults tbody').innerHTML=fl.filter(x=>x.status!=='fixed').slice(0,12).map(x=>`<tr><td><span class="chip">${x.fault_id}</span></td><td>${x.machine_id}</td><td class="sev-${x.severity}">${x.severity}</td><td>${x.status}${x.signals.some(s=>s.includes('breached'))?' <span class="bad">SLA!</span>':''}</td><td class="muted">${x.ack_due_at.slice(5,16).replace('T',' ')}</td><td class="muted">${x.fix_due_at.slice(5,16).replace('T',' ')}</td><td>${x.status==='open'?`<a href="#" onclick="post('/fleet/faults/${x.fault_id}/ack');return false">ack</a>`:`<a href="#" onclick="post('/fleet/faults/${x.fault_id}/fix');return false">fix</a>`}</td></tr>`).join('')||'<tr><td colspan=7 class="muted">No open faults.</td></tr>';
+  $('#payouts tbody').innerHTML=p.map(x=>`<tr><td>${x.partner_id}</td><td><span class="chip">${x.statement_id}</span></td><td>${eur(x.amount_cents)}</td><td class="muted">${x.end_to_end_id}</td><td class="${x.status==='returned'?'bad':x.status==='settled'?'ok':''}">${x.status}</td></tr>`).join('')||'<tr><td colspan=5 class="muted">Run settlement to generate statements and a pain.001 file.</td></tr>';
+  const sel=$('#user');if(!sel.options.length)sel.innerHTML=u.map(x=>`<option value="${x.user_id}">${esc(x.display_name)} · ${x.site_id} · ${x.language}</option>`).join('');
+}
+async function sendTicket(){const out=await post('/tickets',{text:$('#text').value,user_id:$('#user').value});await openTicket(out.ticket_id)}
+async function openTicket(id){
+  const t=await get('/tickets/'+id);const d=t.outcome_detail;
+  const acts=(d.actions||[]).map(a=>`<li><b>${a.type}</b> ${a.success?'<span class="ok">ok</span>':'<span class="bad">failed</span>'} <span class="muted">${esc(JSON.stringify(a.detail))}</span></li>`).join('');
+  const audit=(t.audit||[]).map(a=>`<li><b>${a.actor}</b> ${a.event} <span class="muted">${esc(JSON.stringify(a.payload)).slice(0,220)}</span></li>`).join('');
+  $('#drawerBody').innerHTML=`<h3>${t.ticket_id} <span class="chip">${t.channel}</span></h3>
+   <p class="reply">${esc(t.text)}</p>
+   <p><b>Triage</b> ${d.triage.intent} · ${d.triage.language} · conf ${d.triage.confidence.toFixed(2)} · machine_ref ${d.triage.machine_ref||'—'}</p>
+   <p><b>Decision</b> <span class="${d.outcome==='auto_resolved'?'ok':'warn'}">${d.outcome}</span> · ${d.decision.reason_codes.map(c=>`<span class="chip">${c}</span>`).join(' ')}</p>
+   <p><b>Evidence</b> <span class="muted">${esc(JSON.stringify(d.evidence_summary)).slice(0,600)}</span></p>
+   <p><b>Actions</b></p><ul>${acts||'<li class="muted">none</li>'}</ul>
+   <p><b>Reply (${d.reply_language})</b></p><div class="reply">${esc(d.reply)}</div>
+   <p><b>Audit trail</b></p><ul class="audit">${audit}</ul>`;
+  drawer.classList.add('open');
+}
+refresh();setInterval(refresh,15000);
+</script>
+</body>
+</html>
