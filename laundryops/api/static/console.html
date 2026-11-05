@@ -30,6 +30,13 @@
   .drawer.open{transform:none}.drawer h3{margin:0 0 8px}.drawer .close{float:right;cursor:pointer;color:var(--muted)}
   .audit li{font-family:var(--mono);font-size:12px;margin:3px 0;color:#2d3a4a}.audit b{color:var(--navy)}
   .feed{max-height:520px;overflow:auto}.muted{color:var(--muted)}
+  .call{display:flex;flex-direction:column;gap:6px;max-height:300px;overflow:auto;background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:10px}
+  .bubble{max-width:85%;padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.4}
+  .bubble.agent{background:var(--navy);color:#fff;align-self:flex-start;border-bottom-left-radius:2px}
+  .bubble.caller{background:#e6f1ff;color:var(--ink);align-self:flex-end;border-bottom-right-radius:2px}
+  .bubble.sys{background:transparent;color:var(--muted);font-size:12px;align-self:center;font-family:var(--mono)}
+  .dtmf{display:flex;gap:6px;flex-wrap:wrap}.dtmf button{background:var(--chip);border:1px solid var(--line);border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px}
+  .mic{width:12px;height:12px;border-radius:50%;background:#aaa;display:inline-block;margin-right:6px}.mic.on{background:var(--bad);box-shadow:0 0 0 4px rgba(180,35,24,.2)}
   @media (max-width:1000px){main{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(3,1fr)}}
 </style>
 </head>
@@ -61,6 +68,20 @@
       <button class="btn" onclick="sendTicket()">Send to agent</button>
       <span class="muted" id="sendhint">Evidence, decision and reply appear in the drawer.</span>
     </div>
+    <h2 style="margin-top:18px">Hotline demo <span class="muted" style="text-transform:none;letter-spacing:0;font-weight:400">— same agent, on the phone (browser speech, no keys)</span></h2>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+      <select id="caller" style="flex:1"></select>
+      <button class="btn" id="callBtn" onclick="startCall()">Call the hotline</button>
+      <button class="btn" style="background:#5b6775" onclick="endCall()">Hang up</button>
+    </div>
+    <div class="call" id="callLog"><div class="bubble sys">Pick a resident and press “Call the hotline”. Chrome/Edge: speak when the dot is red. Other browsers: type below.</div></div>
+    <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+      <span class="mic" id="mic"></span>
+      <input id="sayText" placeholder="…or type what the caller says and press Enter" onkeydown="if(event.key==='Enter')callerSays(this.value)">
+    </div>
+    <div class="dtmf" style="margin-top:6px"><span class="muted" style="font-size:12px;align-self:center">DTMF:</span>
+      <button onclick="dtmf('1')">1 won’t start</button><button onclick="dtmf('2')">2 stopped</button><button onclick="dtmf('3')">3 charged twice</button><button onclick="dtmf('4')">4 refund status</button></div>
+    <div id="callStats" class="muted" style="font-size:12px;margin-top:6px"></div>
     <h2 style="margin-top:18px">Fleet health</h2>
     <table id="fleet"><thead><tr><th>Machine</th><th>Site</th><th>Score</th><th>Severity</th><th>Signals</th></tr></thead><tbody></tbody></table>
     <h2 style="margin-top:18px">Open faults &amp; SLA</h2>
@@ -106,6 +127,24 @@ async function openTicket(id){
    <p><b>Audit trail</b></p><ul class="audit">${audit}</ul>`;
   drawer.classList.add('open');
 }
+// ---------------- hotline demo ----------------
+let call=null,rec=null,listening=false;const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+function log(who,text){const d=document.createElement('div');d.className='bubble '+who;d.textContent=text;$('#callLog').appendChild(d);$('#callLog').scrollTop=1e6}
+function speak(text,locale){return new Promise(res=>{if(!window.speechSynthesis){res();return}const u=new SpeechSynthesisUtterance(text);u.lang=locale;u.rate=1.02;u.onend=res;u.onerror=res;const v=speechSynthesis.getVoices().find(v=>v.lang.replace('_','-').toLowerCase().startsWith(locale.toLowerCase().slice(0,2)));if(v)u.voice=v;speechSynthesis.cancel();speechSynthesis.speak(u)})}
+function listen(locale){if(!SR||!call||call.done)return;try{rec=new SR();rec.lang=locale;rec.interimResults=false;rec.maxAlternatives=1;
+  rec.onstart=()=>{listening=true;$('#mic').classList.add('on')};rec.onend=()=>{listening=false;$('#mic').classList.remove('on')};
+  rec.onresult=e=>{callerSays(e.results[0][0].transcript)};rec.onerror=e=>{if(e.error==='no-speech')callerSays('')};rec.start()}catch(e){}}
+async function agentTurn(t){call=t;log('agent',t.say);if(t.sms)log('sys','SMS → caller: '+t.sms);if(t.handoff)log('sys','WARM TRANSFER · whisper to human agent: '+t.whisper);
+  $('#callStats').textContent=`state ${t.state} · language ${t.language} · ${t.ticket_id?'ticket '+t.ticket_id:''}`;
+  await speak(t.say,t.locale);if(t.done){log('sys','call ended');await refresh();await loadCalls();return}listen(t.locale)}
+async function startCall(){$('#callLog').innerHTML='';if(window.speechSynthesis)speechSynthesis.getVoices();const from=$('#caller').value||null;
+  const t=await post('/voice/demo/start',{from_number:from});log('sys',`incoming call from ${from||'unknown number'}`);await agentTurn(t)}
+async function callerSays(text){if(!call||call.done)return;if(rec){try{rec.abort()}catch(e){}}$('#sayText').value='';if(text)log('caller',text);else log('sys','(silence)');
+  const t=await post('/voice/demo/turn',{call_id:call.call_id,text:text||''});await agentTurn(t)}
+async function dtmf(d){if(!call||call.done)return;log('caller','[pressed '+d+']');const t=await post('/voice/demo/turn',{call_id:call.call_id,text:'',dtmf:d});await agentTurn(t)}
+function endCall(){if(rec){try{rec.abort()}catch(e){}}if(window.speechSynthesis)speechSynthesis.cancel();call=null;log('sys','hung up')}
+async function loadCalls(){try{const c=await get('/voice/calls?limit=5');const m=c.metrics;if(m.calls)$('#callStats').textContent+=` · hotline: ${m.calls} calls, containment ${(m.containment_rate*100).toFixed(0)}%, ${m.avg_turns} turns/call`}catch(e){}}
+const _refresh=refresh;refresh=async function(){await _refresh();const u=await get('/demo/users?limit=40');const sel=$('#caller');if(!sel.options.length)sel.innerHTML='<option value="">unknown number (not a customer)</option>'+u.filter(x=>x.phone).map(x=>`<option value="${x.phone}">${esc(x.display_name)} · ${x.phone} · ${x.language}</option>`).join('')};
 refresh();setInterval(refresh,15000);
 </script>
 </body>

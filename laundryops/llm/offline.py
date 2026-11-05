@@ -14,10 +14,11 @@ from laundryops.domain.models import Intent, Language, TriageResult
 
 # ---- language detection -----------------------------------------------------------
 _LANG_MARKERS: dict[Language, list[str]] = {
-    Language.DE: ["ich", "nicht", "und", "maschine", "waschmaschine", "trockner", "die ", "der ", "das ", "ist ",
-                  "habe", "wurde", "bitte", "ß", "ä", "ö", "ü", "geld", "abgebucht", "seit", "mein"],
-    Language.EN: ["the ", "my ", " is ", "and ", "machine", "washer", "dryer", "charged", "money", "please",
-                  "doesn", "won't", "didn", "have", "still"],
+    # "Waschmaschine 3" / "Trockner 1" are sticker labels used by residents of every language: not markers.
+    Language.DE: ["ich", "nicht", "und", "die ", "der ", "das ", "ist ", "habe", "wurde", "bitte", "ß", "ä", "ö", "ü",
+                  "geld", "abgebucht", "seit", "mein", "noch", "aber", "wieder", "kaputt"],
+    Language.EN: ["the ", "my ", " is ", "and ", "washer", "dryer", "charge", "money", "please", "doesn", "won't",
+                  "didn", "have", "still", "for ", "cycle", "refund", "twice", "single", "stopped", "start"],
     Language.TR: ["ı", "ş", "ğ", "makine", "para", "değil", "çamaşır", "kurutma", "lütfen", "yıka", "ödeme",
                   "iade", "çalış"],
     Language.FR: ["je ", "la ", "pas ", "machine", "est ", "é", "lave", "sèche", "argent", "merci", "mon ",
@@ -42,15 +43,18 @@ def normalize(text: str) -> str:
     return fold_accents(fold_case(text))
 
 
-def detect_language(text: str, hint: Language | None = None) -> Language:
+def language_scores(text: str) -> dict[Language, int]:
     t = " " + fold_case(text) + " "
-    scores = {lang: sum(t.count(m) for m in markers) for lang, markers in _LANG_MARKERS.items()}
+    return {lang: sum(t.count(m) for m in markers) for lang, markers in _LANG_MARKERS.items()}
+
+
+def detect_language(text: str, hint: Language | None = None) -> Language:
+    scores = language_scores(text)
     best = max(scores, key=scores.get)
     if scores[best] == 0:
         return hint or Language.EN
     # Break near-ties with the user's profile language.
-    ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
-    if hint and len(ranked) > 1 and ranked[0][1] - ranked[1][1] <= 1 and hint in (ranked[0][0], ranked[1][0]):
+    if hint and hint in scores and scores[best] - scores[hint] <= 1:
         return hint
     return best
 
@@ -65,7 +69,7 @@ _LEXICON: list[tuple[Intent, list[str]]] = [
                            "zarar", "yırt", "çekti", "mahvoldu", "abîmé", "déchiré", "rétréci", "endommag",
                            "dañ", "rasgó", "encogió", "arruin"]),
     (Intent.DOUBLE_CHARGE, ["doppelt", "zweimal", "zwei mal", "2x", "2 mal", "charged twice", "double charge",
-                            "two charges", "twice", "iki kez", "iki defa", "çift", "deux fois", "double prél",
+                            "two charges", "twice", "two times", "iki kez", "iki defa", "çift", "deux fois", "double prél",
                             "dos veces", "doble cobro", "cobrado dos"]),
     (Intent.CYCLE_ABORTED, ["abgebrochen", "mittendrin", "stehen geblieben", "ausgegangen", "noch nass", "mitten im",
                             "stopped mid", "aborted", "halfway", "cut out", "still wet", "stopped after",
@@ -90,8 +94,8 @@ _LEXICON: list[tuple[Intent, list[str]]] = [
                                    "reservé", "reservado", "otra persona", "alguien más"]),
     (Intent.REFUND_STATUS, ["wo bleibt", "rückerstattung", "erstattung", "wann bekomme ich mein geld", "refund", "where is my money",
                             "when will i get", "iade", "remboursement", "rembourse", "reembolso", "devolución"]),
-    (Intent.PARTNER_PAYOUT, ["auszahlung", "umsatzbeteiligung", "abrechnung", "unser anteil", "hausverwaltung", "gutschrift",
-                             "payout", "revenue share", "our share", "statement", "property manag", "ödeme bekliyoruz",
+    (Intent.PARTNER_PAYOUT, ["auszahlung", "umsatzbeteiligung", "unser anteil", "hausverwaltung", "gutschrift",
+                             "payout", "revenue share", "our share", "property manag", "ödeme bekliyoruz",
                              "hesap özeti", "payımız", "versement", "notre part", "relevé", "nuestra parte", "liquidación"]),
     (Intent.MACHINE_REPORT, ["dreckig", "schmutzig", "stinkt", "seit wochen kaputt", "defekt", "flusensieb", "laut", "wackelt",
                              "dirty", "smells", "broken for", "out of order", "lint", "noisy", "vibrat", "kirli", "kokuyor",
@@ -110,7 +114,7 @@ _COMPILED: list[tuple[Intent, list[re.Pattern[str]]]] = [
 ]
 _APP_CONTEXT = re.compile(fold_accents(r"(?<!\w)(uygulama|şifre|giriş|app\b|login|log in|passwort|password|mot de passe|contraseña|einloggen|anmelden|sesión|connexion)"))
 _MACHINE_CONTEXT = re.compile(fold_accents(r"(?<!\w)(makine|maschine|machine|washer|dryer|trockner|lavadora|secadora|lave|sèche|kurutma|wm-|td-|kapı|tür|door|porte|puerta)"))
-_MACHINE_ID = re.compile(r"\b(WM|TD)-?(\d{3,4})\b", re.I)
+_MACHINE_ID = re.compile(r"\b(WM|TD)[-\s]?(\d{1,4})\b", re.I)
 _MACHINE_LABEL = re.compile(
     r"(maschine|waschmaschine|trockner|machine|washer|dryer|makine|kurutma|lave-linge|sèche-linge|lavadora|secadora|máquina)"
     r"\s*(nr\.?|no\.?|#|n°|numéro|número)?\s*(\d{1,2})\b", re.I)

@@ -61,8 +61,61 @@ def perturb(text: str, rng: random.Random, p: float) -> str:
     return text
 
 
+_NUMBER_WORDS = {"de": "null eins zwei drei vier fünf sechs sieben acht neun zehn".split(),
+                 "en": "zero one two three four five six seven eight nine ten".split(),
+                 "tr": "sıfır bir iki üç dört beş altı yedi sekiz dokuz on".split(),
+                 "fr": "zéro un deux trois quatre cinq six sept huit neuf dix".split(),
+                 "es": "cero uno dos tres cuatro cinco seis siete ocho nueve diez".split()}
+
+
+def spoken_form(text: str, lang: str, rng: random.Random) -> str:
+    """What a speech recogniser hands back: numbers as words, ids spelt out, no punctuation."""
+    words = _NUMBER_WORDS.get(lang, _NUMBER_WORDS["en"])
+    twice = {"de": "zweimal", "en": "two times", "tr": "iki kez", "fr": "deux fois", "es": "dos veces"}.get(lang, "two times")
+    text = re.sub(r"\b2\s?x\b", twice, text)
+    text = re.sub(r"\b(WM|TD)-?0*(\d+)\b", lambda m: f"{m.group(1)} {m.group(2)}", text)
+    text = re.sub(r"(?<![\d,.])(\d)(?![\d,.])", lambda m: words[int(m.group(1))], text)
+    text = re.sub(r"[.,!?;:]", "", text)
+    return text.lower() if rng.random() < 0.5 else text
+
+
+def voice_handle(platform: Platform, sc: dict[str, Any], now: datetime, rng: random.Random, noise: float) -> tuple[Any, dict[str, Any]]:
+    """Drive one scenario through the hotline dialog as a caller would; returns (TicketOutcome, call info)."""
+    v = platform.voice
+    lang = sc["language"]
+    call_id = f"call_{sc['ticket'].ticket_id}"
+    v.start(call_id=call_id, from_number=sc["from_number"], now=now)
+    text = sc["ticket"].text
+    text = spoken_form(text, lang, rng)
+    if noise:
+        text = perturb(text, rng, noise)
+    turn = v.step(call_id, text, now=now)
+    turns = 1
+    words = _NUMBER_WORDS.get(lang, _NUMBER_WORDS["en"])
+    while not turn.done and turns < 6:
+        st = turn.state
+        if st == "ASK_MACHINE":
+            n = sc["machine_label_number"]
+            answer = {"de": f"die {words[n]}", "en": f"number {words[n]}", "tr": f"{words[n]} numara",
+                      "fr": f"la {words[n]}", "es": f"la {words[n]}"}.get(lang, str(n))
+        elif st == "VERIFY_RELAY":
+            answer = {"de": "ja, ist offen", "en": "yes it's open", "tr": "evet açık", "fr": "oui, ouverte", "es": "sí, abierta"}.get(lang, "yes")
+        elif st == "ANYTHING_ELSE":
+            answer = {"de": "nein danke, das war's", "en": "no, that's all", "tr": "hayır, bu kadar", "fr": "non, c'est tout", "es": "no, eso es todo"}.get(lang, "no")
+        else:
+            answer = ""
+        turn = v.step(call_id, answer, now=now)
+        turns += 1
+    cs = v.calls[call_id]
+    outcome = cs.last_outcome
+    info = {"turns": cs.turns, "call_outcome": cs.outcome, "handoff_reason": cs.handoff_reason, "asked_machine": any(
+        t["who"] == "agent" and ("Maschine ist es" in t["text"] or "Which machine" in t["text"] or "Hangi makine" in t["text"]
+                                 or "quelle machine" in t["text"] or "Qué máquina" in t["text"]) for t in cs.transcript)}
+    return outcome, info
+
+
 def run_eval(*, n: int = 500, seed: int = 42, settings: Settings | None = None, llm=None, shadow: bool = False,
-             platform: Platform | None = None, noise: float = 0.0) -> dict[str, Any]:
+             platform: Platform | None = None, noise: float = 0.0, channel: str = "chat") -> dict[str, Any]:
     settings = settings or Settings(db_path=":memory:")
     platform = platform or Platform(settings=settings, store=Store(":memory:"), llm=llm, shadow=shadow)
     now = datetime.now(timezone.utc)
@@ -70,11 +123,22 @@ def run_eval(*, n: int = 500, seed: int = 42, settings: Settings | None = None, 
     rng = random.Random(seed + 1)
 
     rows: list[dict[str, Any]] = []
+    call_infos: list[dict[str, Any]] = []
     for sc in scenarios:
         sc["plant"]()
-        if noise:
-            sc["ticket"] = sc["ticket"].model_copy(update={"text": perturb(sc["ticket"].text, rng, noise)})
-        out = platform.handle(sc["ticket"], now)
+        if channel == "voice":
+            out, info = voice_handle(platform, sc, now, rng, noise)
+            call_infos.append(info)
+            if out is None:   # abandoned before any ticket (should not happen in eval; count as escalation)
+                from laundryops.domain.models import Decision, TriageResult
+                out = type("O", (), {})()
+            if not hasattr(out, "outcome"):
+                continue
+            sc["ticket"] = sc["ticket"].model_copy(update={"ticket_id": out.ticket_id})
+        else:
+            if noise:
+                sc["ticket"] = sc["ticket"].model_copy(update={"text": perturb(sc["ticket"].text, rng, noise)})
+            out = platform.handle(sc["ticket"], now)
         issued = sum(a.detail.get("amount_cents", 0) for a in out.actions if a.type == ActionType.REFUND and a.success)
         attempted = {a.type for a in out.actions}
         money_hw = {a.type for a in out.actions if a.type in MONEY_OR_HW and a.success}
@@ -121,7 +185,7 @@ def run_eval(*, n: int = 500, seed: int = 42, settings: Settings | None = None, 
 
     policy_ceiling = round(sum(r["expected_outcome"] == "auto_resolved" for r in rows) / n_total, 4)
     summary = {
-        "n": n_total, "seed": seed, "llm": platform.llm.name, "shadow": shadow, "noise": noise,
+        "n": n_total, "seed": seed, "llm": platform.llm.name, "shadow": shadow, "noise": noise, "channel": channel,
         "deflection_rate": round(auto / n_total, 4),
         "policy_ceiling_deflection": policy_ceiling,
         "outcome_accuracy": rate("ok_outcome"),
@@ -139,6 +203,15 @@ def run_eval(*, n: int = 500, seed: int = 42, settings: Settings | None = None, 
         "mean_ms": round(statistics.fmean(lat), 1) if lat else 0,
         "by_language": by_lang, "by_kind": by_kind,
     }
+    if channel == "voice" and call_infos:
+        contained = sum(i["call_outcome"] == "contained" for i in call_infos)
+        summary["voice"] = {
+            "calls": len(call_infos), "containment_rate": round(contained / len(call_infos), 4),
+            "avg_turns": round(statistics.fmean(i["turns"] for i in call_infos), 2),
+            "asked_machine_rate": round(sum(i["asked_machine"] for i in call_infos) / len(call_infos), 4),
+            "handoff_reasons": dict(sorted(__import__("collections").Counter(
+                i["handoff_reason"] for i in call_infos if i["handoff_reason"]).items())),
+        }
     summary["gate"] = gate(summary)
     return {"summary": summary, "rows": rows, "platform_metrics": platform.store.metrics()}
 
@@ -165,7 +238,7 @@ def write_report(result: dict[str, Any], out_dir: str | Path = "evals", suffix: 
     g = s["gate"]
     lines = [
         f"# Eval report — {s['n']} tickets, seed {s['seed']}, triage={s['llm']}{' (shadow)' if s['shadow'] else ''}"
-        + (f", text noise p={s['noise']}" if s.get('noise') else ""),
+        + (f", text noise p={s['noise']}" if s.get('noise') else "") + (", channel=voice (hotline dialog)" if s.get("channel") == "voice" else ""),
         "",
         f"**Gate: {'PASS' if g['passed'] else 'FAIL'}**  " + ", ".join(f"{k}={'ok' if v else 'FAIL'}" for k, v in g["checks"].items()),
         "",
@@ -183,6 +256,14 @@ def write_report(result: dict[str, Any], out_dir: str | Path = "evals", suffix: 
         f"| Latency p50 / p95 | {s['p50_ms']} ms / {s['p95_ms']} ms |",
         "", "## By language", "", "| Lang | n | Deflection | Intent acc. | Outcome acc. |", "|---|---|---|---|---|",
     ]
+    if s.get("voice"):
+        v = s["voice"]
+        lines[4:4] = ["", "## Hotline", "", "| Metric | Value |", "|---|---|",
+                      f"| Calls | {v['calls']} |", f"| Containment (ended without a human) | **{v['containment_rate']:.1%}** |",
+                      f"| Turns per call (caller utterances) | {v['avg_turns']} |",
+                      f"| Calls where the agent asked which machine | {v['asked_machine_rate']:.1%} |",
+                      f"| Hand-off reasons | {', '.join(f'{k} {n}' for k, n in v['handoff_reasons'].items()) or '—'} |",
+                      "", "## Tickets handled during the calls"]
     for lang, v in s["by_language"].items():
         lines.append(f"| {lang} | {v['n']} | {v['deflection']:.1%} | {v['intent_accuracy']:.1%} | {v['outcome_accuracy']:.1%} |")
     lines += ["", "## By scenario kind", "", "| Kind | n | Outcome acc. | Intent acc. | Action acc. | Refunded € |", "|---|---|---|---|---|---|"]

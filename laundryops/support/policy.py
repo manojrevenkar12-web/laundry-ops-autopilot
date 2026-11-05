@@ -76,6 +76,9 @@ def decide(triage: TriageResult, ev: Evidence, s: Settings, now: datetime, *, in
         return _escalate(["ESC_DAMAGE_CLAIM"], "Damage claims are reviewed by a person.", reason="damage")
 
     # ---- 2. partner channel --------------------------------------------------------------
+    if triage.intent == Intent.PARTNER_PAYOUT and ev.user is not None and ev.partner is None:
+        # An identified resident using partner-ish words ("where is my money") is asking about their own refund.
+        triage = triage.model_copy(update={"intent": Intent.REFUND_STATUS})
     if triage.intent == Intent.PARTNER_PAYOUT or ev.partner is not None:
         if ev.partner is None:
             return _escalate(["ESC_NO_IDENTITY"], "Payout question without an identified partner.", reason="identity")
@@ -145,7 +148,14 @@ def decide(triage: TriageResult, ev: Evidence, s: Settings, now: datetime, *, in
                              and snap.active_session_id != ev.session.session_id)
         amt = _refundable(session_payment)
 
-        if aborted:
+        if "caller_confirmed_failure_after_retrigger" in ev.notes:
+            codes.append("EV_RETRIGGER_CONFIRMED_FAILED")
+            actions.append(PlannedAction(type=ActionType.REFUND, amount_cents=amt, payment_id=session_payment.payment_id,
+                                         reason_code="ACT_REFUND_FULL", detail={"evidence": "EV_RETRIGGER_CONFIRMED_FAILED"}))
+            actions.append(_fault_action(ev, "relay_fail"))
+            codes += ["ACT_REFUND_FULL", "ACT_FAULT_TICKET"]
+            planned_refund_cents += amt
+        elif aborted:
             codes.append("EV_CYCLE_ABORT")
             actions.append(PlannedAction(type=ActionType.REFUND, amount_cents=amt, payment_id=session_payment.payment_id,
                                          reason_code="ACT_REFUND_FULL", detail={"evidence": "EV_CYCLE_ABORT"}))

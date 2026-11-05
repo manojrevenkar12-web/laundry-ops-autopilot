@@ -46,6 +46,10 @@ CREATE TABLE IF NOT EXISTS faults (
 CREATE TABLE IF NOT EXISTS statements (
   statement_id TEXT PRIMARY KEY, partner_id TEXT, period_start TEXT, period_end TEXT, payload TEXT
 );
+CREATE TABLE IF NOT EXISTS calls (
+  call_id TEXT PRIMARY KEY, from_number TEXT, user_id TEXT, partner_id TEXT, language TEXT, started_at TEXT,
+  ended_at TEXT, turns INTEGER, outcome TEXT, handoff_reason TEXT, tickets TEXT, transcript TEXT
+);
 CREATE TABLE IF NOT EXISTS payouts (
   payout_id TEXT PRIMARY KEY, partner_id TEXT, statement_id TEXT, amount_cents INTEGER,
   end_to_end_id TEXT, status TEXT, sent_at TEXT, settled_at TEXT, return_reason TEXT
@@ -137,6 +141,49 @@ class Store:
                 (machine_id, since),
             ).fetchone()
         return int(row["n"])
+
+    def recent_retrigger(self, user_id: str, machine_id: str, now: datetime | None = None, minutes: int = 15) -> bool:
+        """Did we actuate this machine's relay for this user in the last N minutes (any result)?"""
+        now = now or utcnow()
+        since = (now - timedelta(minutes=minutes)).isoformat()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COUNT(*) AS n FROM actions WHERE user_id=? AND machine_id=? AND type='retrigger_relay' AND at>=?",
+                (user_id, machine_id, since),
+            ).fetchone()
+        return int(row["n"]) > 0
+
+    # ---- calls -------------------------------------------------------------------
+    def save_call(self, c: dict[str, Any]) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO calls VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (c["call_id"], c.get("from_number"), c.get("user_id"), c.get("partner_id"), c.get("language"),
+                 c.get("started_at"), c.get("ended_at"), c.get("turns", 0), c.get("outcome"), c.get("handoff_reason"),
+                 json.dumps(c.get("tickets", [])), json.dumps(c.get("transcript", []), ensure_ascii=False)),
+            )
+            self._conn.commit()
+
+    def list_calls(self, limit: int = 100) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute("SELECT * FROM calls ORDER BY started_at DESC LIMIT ?", (limit,)).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["tickets"] = json.loads(d["tickets"] or "[]")
+            d["transcript"] = json.loads(d["transcript"] or "[]")
+            out.append(d)
+        return out
+
+    def call_metrics(self) -> dict[str, Any]:
+        with self._lock:
+            tot = self._conn.execute("SELECT COUNT(*) AS n, AVG(turns) AS t FROM calls WHERE ended_at IS NOT NULL").fetchone()
+            contained = self._conn.execute("SELECT COUNT(*) AS n FROM calls WHERE outcome='contained'").fetchone()["n"]
+            reasons = self._conn.execute(
+                "SELECT handoff_reason, COUNT(*) AS n FROM calls WHERE outcome='handoff' GROUP BY handoff_reason").fetchall()
+        n = int(tot["n"] or 0)
+        return {"calls": n, "contained": contained, "containment_rate": round(contained / n, 4) if n else 0.0,
+                "avg_turns": round(float(tot["t"] or 0), 2), "handoff_reasons": {r["handoff_reason"]: r["n"] for r in reasons}}
 
     # ---- money counters used by guardrails ---------------------------------------
     def user_auto_money_30d(self, user_id: str, now: datetime | None = None) -> tuple[int, int, int]:

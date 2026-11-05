@@ -12,7 +12,8 @@ from laundryops.support.service import Platform
 
 @pytest.fixture
 def now() -> datetime:
-    return datetime(2026, 11, 1, 12, 0, tzinfo=timezone.utc)
+    # The mock adapters plant data relative to the wall clock, so the test clock is the wall clock too.
+    return datetime.now(timezone.utc).replace(microsecond=0)
 
 
 @pytest.fixture

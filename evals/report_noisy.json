@@ -4,162 +4,163 @@
   "llm": "offline-rules",
   "shadow": false,
   "noise": 0.5,
-  "deflection_rate": 0.896,
+  "channel": "chat",
+  "deflection_rate": 0.89,
   "policy_ceiling_deflection": 0.896,
-  "outcome_accuracy": 1.0,
-  "intent_accuracy": 0.9858,
-  "action_accuracy": 0.996,
+  "outcome_accuracy": 0.994,
+  "intent_accuracy": 0.9838,
+  "action_accuracy": 0.986,
   "wrong_refund_rate": 0.0,
   "missed_refund_rate": 0.0,
   "unsafe_action_rate": 0.0,
-  "escalation_precision": 1.0,
+  "escalation_precision": 0.9455,
   "escalation_recall": 1.0,
-  "refunds_issued": 185,
-  "refund_total_cents": 64800,
-  "relay_retriggers": 101,
-  "p50_ms": 2,
-  "p95_ms": 3,
-  "mean_ms": 1.8,
+  "refunds_issued": 180,
+  "refund_total_cents": 63000,
+  "relay_retriggers": 96,
+  "p50_ms": 1,
+  "p95_ms": 2,
+  "mean_ms": 1.5,
   "by_language": {
     "de": {
-      "n": 233,
-      "deflection": 0.9013,
-      "intent_accuracy": 0.9738,
-      "outcome_accuracy": 1.0
+      "n": 227,
+      "deflection": 0.8678,
+      "intent_accuracy": 0.9866,
+      "outcome_accuracy": 0.9956
     },
     "en": {
-      "n": 156,
-      "deflection": 0.8782,
+      "n": 153,
+      "deflection": 0.915,
       "intent_accuracy": 0.9935,
       "outcome_accuracy": 1.0
     },
     "es": {
-      "n": 27,
-      "deflection": 0.963,
-      "intent_accuracy": 1.0,
+      "n": 38,
+      "deflection": 0.9211,
+      "intent_accuracy": 0.973,
       "outcome_accuracy": 1.0
     },
     "fr": {
-      "n": 45,
-      "deflection": 0.8667,
-      "intent_accuracy": 1.0,
-      "outcome_accuracy": 1.0
+      "n": 38,
+      "deflection": 0.8158,
+      "intent_accuracy": 0.9211,
+      "outcome_accuracy": 0.9474
     },
     "tr": {
-      "n": 39,
-      "deflection": 0.9231,
+      "n": 44,
+      "deflection": 0.9545,
       "intent_accuracy": 1.0,
       "outcome_accuracy": 1.0
     }
   },
   "by_kind": {
     "aborted": {
-      "n": 47,
+      "n": 55,
       "outcome_accuracy": 1.0,
       "intent_accuracy": 1.0,
       "action_accuracy": 1.0,
-      "refund_cents": 16150
+      "refund_cents": 19100
     },
     "app_payment": {
-      "n": 30,
-      "outcome_accuracy": 1.0,
-      "intent_accuracy": 1.0,
-      "action_accuracy": 1.0,
+      "n": 23,
+      "outcome_accuracy": 0.9565,
+      "intent_accuracy": 0.9565,
+      "action_accuracy": 0.9565,
       "refund_cents": 0
     },
     "charged_no_session": {
-      "n": 36,
+      "n": 34,
       "outcome_accuracy": 1.0,
       "intent_accuracy": 1.0,
       "action_accuracy": 1.0,
-      "refund_cents": 12450
+      "refund_cents": 12150
     },
     "damage": {
-      "n": 22,
+      "n": 19,
       "outcome_accuracy": 1.0,
-      "intent_accuracy": 1.0,
+      "intent_accuracy": 0.9474,
       "action_accuracy": 1.0,
       "refund_cents": 0
     },
     "double_charge": {
-      "n": 50,
-      "outcome_accuracy": 1.0,
-      "intent_accuracy": 0.98,
-      "action_accuracy": 1.0,
-      "refund_cents": 17750
-    },
-    "double_claim_single": {
-      "n": 13,
+      "n": 36,
       "outcome_accuracy": 1.0,
       "intent_accuracy": 1.0,
       "action_accuracy": 1.0,
+      "refund_cents": 12300
+    },
+    "double_claim_single": {
+      "n": 12,
+      "outcome_accuracy": 0.9167,
+      "intent_accuracy": 0.9167,
+      "action_accuracy": 0.9167,
       "refund_cents": 0
     },
     "general": {
-      "n": 30,
-      "outcome_accuracy": 1.0,
-      "intent_accuracy": 1.0,
-      "action_accuracy": 1.0,
+      "n": 37,
+      "outcome_accuracy": 0.973,
+      "intent_accuracy": 0.973,
+      "action_accuracy": 0.973,
       "refund_cents": 0
     },
     "injection": {
-      "n": 7,
+      "n": 5,
       "outcome_accuracy": 1.0,
       "intent_accuracy": 1.0,
       "action_accuracy": 1.0,
       "refund_cents": 0
     },
     "legal": {
-      "n": 8,
+      "n": 9,
       "outcome_accuracy": 1.0,
-      "intent_accuracy": 1.0,
+      "intent_accuracy": 0.8889,
       "action_accuracy": 1.0,
       "refund_cents": 0
     },
     "machine_report": {
-      "n": 39,
+      "n": 36,
       "outcome_accuracy": 1.0,
       "intent_accuracy": 1.0,
-      "action_accuracy": 0.9487,
+      "action_accuracy": 0.9444,
       "refund_cents": 0
     },
     "not_started_offline": {
-      "n": 17,
+      "n": 18,
       "outcome_accuracy": 1.0,
-      "intent_accuracy": 0.8235,
+      "intent_accuracy": 1.0,
       "action_accuracy": 1.0,
-      "refund_cents": 5800
+      "refund_cents": 6300
     },
     "not_started_relay_fault": {
-      "n": 35,
+      "n": 37,
       "outcome_accuracy": 1.0,
-      "intent_accuracy": 0.9714,
-      "action_accuracy": 1.0,
-      "refund_cents": 12650
+      "intent_accuracy": 1.0,
+      "action_accuracy": 0.9459,
+      "refund_cents": 13150
     },
     "not_started_relay_ok": {
-      "n": 66,
+      "n": 61,
       "outcome_accuracy": 1.0,
-      "intent_accuracy": 0.9848,
+      "intent_accuracy": 0.9672,
       "action_accuracy": 1.0,
       "refund_cents": 0
     },
     "partner": {
-      "n": 16,
+      "n": 25,
       "outcome_accuracy": 1.0,
       "intent_accuracy": 1.0,
       "action_accuracy": 1.0,
       "refund_cents": 0
     },
     "refund_status_found": {
-      "n": 26,
+      "n": 25,
       "outcome_accuracy": 1.0,
       "intent_accuracy": 1.0,
       "action_accuracy": 1.0,
       "refund_cents": 0
     },
     "refund_status_none": {
-      "n": 9,
+      "n": 8,
       "outcome_accuracy": 1.0,
       "intent_accuracy": 1.0,
       "action_accuracy": 1.0,
@@ -173,21 +174,21 @@
       "refund_cents": 0
     },
     "reservation_conflict": {
-      "n": 27,
-      "outcome_accuracy": 1.0,
-      "intent_accuracy": 0.963,
-      "action_accuracy": 1.0,
-      "refund_cents": 0
-    },
-    "running_normal": {
-      "n": 7,
+      "n": 31,
       "outcome_accuracy": 1.0,
       "intent_accuracy": 1.0,
       "action_accuracy": 1.0,
       "refund_cents": 0
     },
+    "running_normal": {
+      "n": 10,
+      "outcome_accuracy": 1.0,
+      "intent_accuracy": 0.9,
+      "action_accuracy": 1.0,
+      "refund_cents": 0
+    },
     "unverifiable": {
-      "n": 8,
+      "n": 12,
       "outcome_accuracy": 1.0,
       "intent_accuracy": 1.0,
       "action_accuracy": 1.0,

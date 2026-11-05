@@ -8,8 +8,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi import FastAPI, Form, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse, PlainTextResponse, Response
 from pydantic import BaseModel
 
 from laundryops import __version__
@@ -155,6 +155,100 @@ def reconcile(records: list[BankRecord]) -> dict[str, Any]:
     return platform.settlement.reconcile([r.model_dump() for r in records])
 
 
+# ---- voice: Twilio speech webhooks (day-one integration) ---------------------------------
+def _twiml(turn, call_id: str) -> Response:
+    from laundryops.voice.twiml import twiml_for_turn
+
+    base = _settings.voice_public_base_url.rstrip("/")
+    xml = twiml_for_turn(turn, call_id, turn_url=f"{base}/voice/turn", human_number=_settings.voice_human_number,
+                         whisper_url=f"{base}/voice/whisper?call={call_id}", sms_from=_settings.voice_sms_from)
+    return Response(content=xml, media_type="application/xml")
+
+
+@app.post("/voice/incoming")
+async def voice_incoming(request: Request) -> Response:
+    """Twilio Voice webhook for an inbound call. Greets the caller and opens the first <Gather>."""
+    form = await request.form()
+    call_id = str(form.get("CallSid") or f"call_{int(datetime.now(timezone.utc).timestamp() * 1000)}")
+    turn = platform.voice.start(call_id=call_id, from_number=str(form.get("From") or "") or None)
+    return _twiml(turn, call_id)
+
+
+@app.post("/voice/turn")
+async def voice_turn(request: Request, call: str = Query(...)) -> Response:
+    """<Gather> callback: SpeechResult (or Digits) for one caller turn; empty when the caller said nothing."""
+    form = await request.form()
+    turn = platform.voice.step(call, utterance=str(form.get("SpeechResult") or ""), dtmf=str(form.get("Digits") or "") or None)
+    return _twiml(turn, call)
+
+
+@app.post("/voice/whisper")
+@app.get("/voice/whisper")
+def voice_whisper(call: str = Query(...)) -> Response:
+    """Read to the human agent before the caller is bridged: who is calling, what the agent already did."""
+    from laundryops.voice.twiml import twiml_whisper
+
+    cs = platform.voice.calls.get(call)
+    text = platform.voice._whisper(cs) if cs else "Hotline transfer, no context available."
+    return Response(content=twiml_whisper(text), media_type="application/xml")
+
+
+@app.websocket("/voice/stream")
+async def voice_stream(ws: WebSocket) -> None:
+    """Twilio Media Streams: real-time μ-law in/out with VAD, barge-in and the STT/TTS providers from settings."""
+    from laundryops.voice.media_stream import MediaStreamSession
+    from laundryops.voice.providers import DeepgramSTT, ElevenLabsTTS, ScriptedSTT, ToneTTS
+
+    stt = DeepgramSTT(_settings.deepgram_api_key) if _settings.stt_provider == "deepgram" and _settings.deepgram_api_key else ScriptedSTT()
+    tts = (ElevenLabsTTS(_settings.elevenlabs_api_key, _settings.elevenlabs_voice_id)
+           if _settings.tts_provider == "elevenlabs" and _settings.elevenlabs_api_key else ToneTTS())
+    session = MediaStreamSession(platform.voice, stt, tts)
+    await ws.accept()
+    try:
+        while not session.done:
+            msg = await ws.receive_json()
+            for out in session.on_message(msg):
+                await ws.send_json(out)
+    except WebSocketDisconnect:
+        pass
+
+
+# ---- voice: browser demo (no telephony, no keys) --------------------------------------------
+class DemoStart(BaseModel):
+    from_number: str | None = None
+    call_id: str | None = None
+
+
+class DemoTurn(BaseModel):
+    call_id: str
+    text: str = ""
+    dtmf: str | None = None
+
+
+def _turn_json(turn, call_id: str) -> dict[str, Any]:
+    return {"call_id": call_id, "say": turn.say, "listen": turn.listen, "done": turn.done, "handoff": turn.handoff,
+            "whisper": turn.whisper, "sms": turn.sms, "language": turn.language.value, "locale": turn.locale,
+            "state": turn.state, "ticket_id": turn.ticket_id}
+
+
+@app.post("/voice/demo/start")
+def voice_demo_start(req: DemoStart) -> dict[str, Any]:
+    call_id = req.call_id or f"demo_{int(datetime.now(timezone.utc).timestamp() * 1000)}"
+    turn = platform.voice.start(call_id=call_id, from_number=req.from_number)
+    return _turn_json(turn, call_id)
+
+
+@app.post("/voice/demo/turn")
+def voice_demo_turn(req: DemoTurn) -> dict[str, Any]:
+    turn = platform.voice.step(req.call_id, utterance=req.text, dtmf=req.dtmf)
+    return _turn_json(turn, req.call_id)
+
+
+@app.get("/voice/calls")
+def voice_calls(limit: int = 50) -> dict[str, Any]:
+    return {"metrics": platform.store.call_metrics(), "calls": platform.store.list_calls(limit)}
+
+
 # ---- demo + console ----------------------------------------------------------------------
 @app.post("/demo/seed")
 def demo_seed(n: int = Query(120, le=2000), seed: int = 42) -> dict[str, Any]:
@@ -170,7 +264,8 @@ def demo_seed(n: int = Query(120, le=2000), seed: int = 42) -> dict[str, Any]:
 
 @app.get("/demo/users")
 def demo_users(limit: int = 20) -> list[dict[str, Any]]:
-    return [u.model_dump(mode="json") for u in list(platform.directory.users.values())[-limit:]]
+    users = [u for u in platform.directory.users.values() if not u.user_id.startswith("bg_")] or list(platform.directory.users.values())
+    return [u.model_dump(mode="json") for u in users[-limit:]]
 
 
 @app.get("/console", response_class=HTMLResponse)

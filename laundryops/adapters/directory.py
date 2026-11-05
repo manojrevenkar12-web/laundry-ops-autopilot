@@ -28,6 +28,16 @@ class Directory:
     def get_site(self, site_id: str | None) -> Site | None:
         return self.sites.get(site_id) if site_id else None
 
+    def user_by_phone(self, phone: str | None) -> User | None:
+        if not phone:
+            return None
+        return next((u for u in self.users.values() if u.phone == phone), None)
+
+    def partner_by_phone(self, phone: str | None) -> Partner | None:
+        if not phone:
+            return None
+        return next((p for p in self.partners.values() if p.phone == phone), None)
+
     def sites_for_partner(self, partner_id: str) -> list[Site]:
         return [s for s in self.sites.values() if s.partner_id == partner_id]
 

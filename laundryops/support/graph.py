@@ -63,7 +63,10 @@ class SupportGraph:
 
     def _triage(self, st: AgentState) -> AgentState:
         t = st["ticket"]
-        hint = self.directory.get_user(t.user_id).language if self.directory.get_user(t.user_id) else None
+        who = self.directory.get_user(t.user_id) or self.directory.get_partner(t.partner_id)
+        hint = who.language if who else None
+        if t.context.get("language_hint"):
+            hint = Language(t.context["language_hint"])
         tr = self.llm.triage(t.text, hint_language=hint, is_partner=t.channel.value == "partner_portal" or bool(t.partner_id))
         self.store.audit("llm", "triaged", t.ticket_id, model=self.llm.name, intent=tr.intent.value, language=tr.language.value,
                          confidence=tr.confidence, machine_ref=tr.machine_ref)

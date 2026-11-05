@@ -20,6 +20,16 @@ class Settings(BaseSettings):
     llm_fallback_to_offline: bool = True
     llm_timeout_s: float = 30.0
 
+    # ---- Voice / telephony ---------------------------------------------------------
+    voice_human_number: str = "+498900000000"      # warm-transfer target
+    voice_sms_from: str | None = None               # Twilio number used for <Sms>; None disables SMS in TwiML
+    voice_public_base_url: str = "http://127.0.0.1:8000"
+    stt_provider: str = "scripted"                  # scripted | deepgram
+    tts_provider: str = "tone"                      # tone | elevenlabs
+    deepgram_api_key: str | None = None
+    elevenlabs_api_key: str | None = None
+    elevenlabs_voice_id: str | None = None
+
     # ---- Storage -------------------------------------------------------------------
     db_path: str = "data/laundryops.sqlite"
 

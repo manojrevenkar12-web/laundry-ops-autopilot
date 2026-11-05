@@ -119,6 +119,7 @@ class Partner(BaseModel):
     share_bps: int = 7500          # partner share of net revenue in basis points
     contact_email: str
     language: Language = Language.DE
+    phone: str | None = None
 
 
 class Site(BaseModel):
@@ -143,6 +144,7 @@ class User(BaseModel):
     language: Language
     display_name: str
     email: str
+    phone: str | None = None        # E.164, used to identify hotline callers
 
 
 class Session(BaseModel):
@@ -226,6 +228,7 @@ class TicketIn(BaseModel):
     channel: Channel = Channel.CHAT
     text: str
     received_at: datetime = Field(default_factory=utcnow)
+    context: dict[str, Any] = Field(default_factory=dict)   # channel facts, e.g. {"confirmed_failure": True} from a voice verify turn
 
 
 class TriageResult(BaseModel):

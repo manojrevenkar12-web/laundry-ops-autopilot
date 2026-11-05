@@ -15,8 +15,10 @@ def _eval(args: argparse.Namespace) -> int:
 
     settings = Settings(db_path=":memory:", llm_mode=args.llm)
     platform = Platform(settings=settings, store=Store(":memory:"), shadow=args.shadow)
-    result = run_eval(n=args.n, seed=args.seed, settings=settings, platform=platform, shadow=args.shadow, noise=args.noise)
-    md, js, rows = write_report(result, args.out, suffix="_noisy" if args.noise else "")
+    result = run_eval(n=args.n, seed=args.seed, settings=settings, platform=platform, shadow=args.shadow, noise=args.noise,
+                      channel=args.channel)
+    suffix = ("_voice" if args.channel == "voice" else "") + ("_noisy" if args.noise else "")
+    md, js, rows = write_report(result, args.out, suffix=suffix)
     s = result["summary"]
     print(f"deflection={s['deflection_rate']:.1%} (ceiling {s['policy_ceiling_deflection']:.1%}) "
           f"outcome_acc={s['outcome_accuracy']:.1%} intent_acc={s['intent_accuracy']:.1%} "
@@ -83,6 +85,7 @@ def main(argv: list[str] | None = None) -> int:
     e.add_argument("--out", default="evals")
     e.add_argument("--gate", action="store_true", help="exit 1 if the CI gate fails")
     e.add_argument("--noise", type=float, default=0.0, help="probability of each text perturbation (typos, no accents, filler)")
+    e.add_argument("--channel", default="chat", choices=["chat", "voice"], help="voice = drive every scenario through the hotline dialog")
     e.set_defaults(fn=_eval)
     s = sub.add_parser("serve", help="start the API + ops console")
     s.add_argument("--host", default="127.0.0.1")

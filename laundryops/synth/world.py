@@ -84,7 +84,7 @@ def build_world(platform, *, seed: int = 42, n_tickets: int = 500, now: datetime
     partners: list[Partner] = []
     for i, (name, iban, bic) in enumerate(PARTNERS):
         p = Partner(partner_id=f"P{i+1}", name=name, iban=iban, bic=bic, share_bps=7500 if i else 7000,
-                    contact_email=f"partner{i+1}@example.org")
+                    contact_email=f"partner{i+1}@example.org", phone=f"+498900{i+1:04d}")
         d.add_partner(p)
         partners.append(p)
     sites: list[Site] = []
@@ -136,7 +136,8 @@ def build_world(platform, *, seed: int = 42, n_tickets: int = 500, now: datetime
         machine = rng.choice(pool or washers)
         site = d.get_site(machine.site_id)
         user = User(user_id=f"u_{i:04d}", site_id=site.site_id, language=lang,
-                    display_name=f"{rng.choice(FIRST_NAMES)} {rng.choice(LAST_NAMES)}", email=f"u{i}@example.org")
+                    display_name=f"{rng.choice(FIRST_NAMES)} {rng.choice(LAST_NAMES)}", email=f"u{i}@example.org",
+                    phone=f"+4915{i:08d}")
         d.add_user(user)
         price = machine.price_cents
         phrases = PHRASES[PHRASE_KEY.get(kind, kind)]
@@ -153,7 +154,17 @@ def build_world(platform, *, seed: int = 42, n_tickets: int = 500, now: datetime
         r_status = rng.choice([RefundStatus.PENDING, RefundStatus.SETTLED])
         other = f"ses_other_{i}"
 
-        def plant(kind=kind, uid=uid, mid=mid, price=price, i=i) -> None:
+        extra_machine = rng.choice([m for m in washers if m.site_id == site.site_id and m.machine_id != mid] or [machine])
+        extra_minutes = rng.randint(120, 600)
+        wants_extra = rng.random() < 0.25 and kind in (NEEDS_CLEAN_MACHINE | TAINTS_MACHINE)
+
+        def plant(kind=kind, uid=uid, mid=mid, price=price, i=i, wants_extra=wants_extra, extra_machine=extra_machine,
+                  extra_minutes=extra_minutes, r_minutes=r_minutes, r_minutes_long=r_minutes_long, r_minutes_hist=r_minutes_hist,
+                  r_secs=r_secs, r_in=r_in, r_status=r_status, other=other) -> None:
+            # every random draw is bound at definition time: closures in a loop would otherwise share the last iteration's values
+            if wants_extra:   # a second recent booking on another machine, so "which machine?" is a real question
+                pay.plant_paid_session(uid, extra_machine.machine_id, extra_machine.price_cents, minutes_ago=extra_minutes,
+                                       state=CycleState.FINISHED, started=True)
             if kind == "not_started_relay_ok":
                 ses, _ = pay.plant_paid_session(uid, mid, price, minutes_ago=r_minutes)
                 iot.plant_not_started(mid, ses.session_id)
@@ -197,6 +208,8 @@ def build_world(platform, *, seed: int = 42, n_tickets: int = 500, now: datetime
 
         scenarios.append({
             "ticket": TicketIn(ticket_id=f"ev_{i:04d}", text=text, received_at=now, **ticket_kwargs),
+            "from_number": (partners[int(ticket_kwargs["partner_id"][1:]) - 1].phone if kind == "partner" else user.phone),
+            "machine_label_number": int(machine.label.split()[-1]),
             "plant": plant, "kind": kind, "language": lang.value,
             "expected_intent": intent.value if intent else None, "expected_outcome": exp_outcome.value,
             "expected_actions": sorted(a.value for a in exp_actions), "expected_refund_cents": exp_refund,

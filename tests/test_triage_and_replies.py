@@ -27,7 +27,8 @@ def test_intent_priorities():
 
 def test_machine_reference_extraction():
     assert extract_machine_ref("WM-0042 startet nicht") == "WM-0042"
-    assert extract_machine_ref("wm42 is broken") is None
+    assert extract_machine_ref("wm42 is broken") == "WM-0042"          # speech recognisers drop the dash and zeros
+    assert extract_machine_ref("WM 21 lleva semanas averiada") == "WM-0021"
     assert extract_machine_ref("Waschmaschine 3 im Keller") == "label:3"
     assert extract_machine_ref("the dryer no. 2 is loud") == "label:2"
 

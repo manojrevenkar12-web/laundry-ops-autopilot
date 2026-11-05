@@ -35,6 +35,8 @@ class Platform:
         self.support = SupportGraph(llm=self.llm, directory=self.directory, iot=self.iot, payments=self.payments,
                                     store=self.store, notifier=self.notifier, settings=self.s,
                                     settlement=self.settlement, shadow=shadow)
+        from laundryops.voice.dialog import VoiceDialog
+        self.voice = VoiceDialog(self, human_number=self.s.voice_human_number)
 
     def handle(self, ticket: TicketIn, now: datetime | None = None) -> TicketOutcome:
         out = self.support.run(ticket, now)

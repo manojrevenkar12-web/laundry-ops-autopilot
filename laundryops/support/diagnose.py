@@ -79,6 +79,13 @@ def collect_evidence(ticket: TicketIn, triage: TriageResult, *, directory: Direc
             ev.machine = iot.get_machine(machine_id)
             ev.snapshot = iot.get_snapshot(machine_id)
 
+    # A voice verify turn: we actuated the relay for this session minutes ago and the caller says the door is
+    # still locked. The justification is our own failed actuation (in the audit store), not the caller's word.
+    if ticket.context.get("confirmed_failure") and ev.user and ev.machine and ev.session:
+        if store.recent_retrigger(ev.user.user_id, ev.machine.machine_id, now, minutes=15):
+            ev.notes.append("caller_confirmed_failure_after_retrigger")
+        else:
+            ev.notes.append("confirmed_failure_without_retrigger")
     if ev.snapshot and ev.session and ev.snapshot.active_session_id == ev.session.session_id:
         ev.notes.append("snapshot_matches_session")
     if ev.snapshot and ev.snapshot.cycle_state == CycleState.ABORTED:
