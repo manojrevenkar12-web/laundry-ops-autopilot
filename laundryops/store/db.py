@@ -50,6 +50,10 @@ CREATE TABLE IF NOT EXISTS calls (
   call_id TEXT PRIMARY KEY, from_number TEXT, user_id TEXT, partner_id TEXT, language TEXT, started_at TEXT,
   ended_at TEXT, turns INTEGER, outcome TEXT, handoff_reason TEXT, tickets TEXT, transcript TEXT
 );
+CREATE TABLE IF NOT EXISTS reviews (
+  reference TEXT PRIMARY KEY, user_id TEXT, partner_id TEXT, channel TEXT, reason TEXT, tickets TEXT,
+  status TEXT, created_at TEXT, updated_at TEXT, note TEXT, call_id TEXT
+);
 CREATE TABLE IF NOT EXISTS payouts (
   payout_id TEXT PRIMARY KEY, partner_id TEXT, statement_id TEXT, amount_cents INTEGER,
   end_to_end_id TEXT, status TEXT, sent_at TEXT, settled_at TEXT, return_reason TEXT
@@ -152,6 +156,47 @@ class Store:
                 (user_id, machine_id, since),
             ).fetchone()
         return int(row["n"]) > 0
+
+    # ---- human review queue (resident not satisfied / asked for a person) -------------
+    def create_review(self, *, user_id: str | None, partner_id: str | None, channel: str, reason: str,
+                      tickets: list[str], call_id: str | None = None, now: datetime | None = None) -> dict[str, Any]:
+        now = now or utcnow()
+        with self._lock:
+            n = self._conn.execute("SELECT COUNT(*) AS n FROM reviews WHERE reference LIKE ?", (f"WR-{now:%y%m%d}-%",)).fetchone()["n"]
+            ref = f"WR-{now:%y%m%d}-{n + 1:03d}"
+            self._conn.execute(
+                "INSERT INTO reviews VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (ref, user_id, partner_id, channel, reason, json.dumps(tickets), "open", now.isoformat(), now.isoformat(), None, call_id),
+            )
+            self._conn.commit()
+        return self.get_review(ref)
+
+    def get_review(self, reference: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute("SELECT * FROM reviews WHERE reference=?", (reference.upper().strip(),)).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        d["tickets"] = json.loads(d["tickets"] or "[]")
+        return d
+
+    def reviews_for_user(self, user_id: str) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._conn.execute("SELECT reference FROM reviews WHERE user_id=? ORDER BY created_at DESC", (user_id,)).fetchall()
+        return [self.get_review(r["reference"]) for r in rows]
+
+    def list_reviews(self, status: str | None = None) -> list[dict[str, Any]]:
+        q = "SELECT reference FROM reviews" + (" WHERE status=?" if status else "") + " ORDER BY created_at DESC"
+        with self._lock:
+            rows = self._conn.execute(q, (status,) if status else ()).fetchall()
+        return [self.get_review(r["reference"]) for r in rows]
+
+    def update_review(self, reference: str, status: str, note: str | None = None) -> dict[str, Any] | None:
+        with self._lock:
+            self._conn.execute("UPDATE reviews SET status=?, note=COALESCE(?, note), updated_at=? WHERE reference=?",
+                               (status, note, utcnow().isoformat(), reference.upper().strip()))
+            self._conn.commit()
+        return self.get_review(reference)
 
     # ---- calls -------------------------------------------------------------------
     def save_call(self, c: dict[str, Any]) -> None:
@@ -317,6 +362,7 @@ class Store:
                 "SELECT handled_in_ms FROM tickets ORDER BY handled_in_ms LIMIT 1 OFFSET (SELECT COUNT(*)/2 FROM tickets)"
             ).fetchone()
             open_faults = self._conn.execute("SELECT COUNT(*) AS n FROM faults WHERE status!='fixed'").fetchone()["n"]
+            open_reviews = self._conn.execute("SELECT COUNT(*) AS n FROM reviews WHERE status='open'").fetchone()["n"]
         return {
             "tickets": total,
             "auto_resolved": auto,
@@ -327,5 +373,6 @@ class Store:
             "relay_retrigger_success": relays["ok"] or 0,
             "p50_handling_ms": p50["handled_in_ms"] if p50 else 0,
             "open_faults": open_faults,
+            "open_reviews": open_reviews,
             "by_intent": [dict(r) for r in by_intent],
         }

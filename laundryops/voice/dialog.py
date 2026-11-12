@@ -23,6 +23,7 @@ from typing import Any
 from laundryops.domain.models import ActionType, Channel, Intent, Language, Outcome, TicketIn, TicketOutcome, utcnow
 from laundryops.domain.models import NATIVE_LANGUAGES
 from laundryops.llm.offline import detect_language, extract_machine_ref, language_request, language_scores
+from laundryops.support.review import find_reference, is_dissatisfied, open_review, spoken_reference, status_line
 from laundryops.voice.numbers import parse_machine_number, spoken_numbers_to_digits
 from laundryops.voice.prompts import HINTS, SPEECH_LOCALE, say
 from laundryops.voice.speech import shape_for_voice
@@ -77,6 +78,7 @@ class CallState:
     verify_machine_id: str | None = None
     transcript: list[dict[str, str]] = field(default_factory=list)
     outcome: str = "open"          # contained | handoff | abandoned
+    review_reference: str | None = None
     handoff_reason: str | None = None
     ended_at: datetime | None = None
 
@@ -118,7 +120,9 @@ class VoiceDialog:
             return Turn(say="", listen=False, done=True, handoff=cs.state == "HANDOFF", language=cs.language, state=cs.state)
         now = now or self.clock()
         cs.turns += 1
-        if dtmf and dtmf in DTMF_MENU and cs.state in ("PROBLEM", "ANYTHING_ELSE"):
+        if dtmf == "0":
+            utterance = utterance or "0"
+        elif dtmf and dtmf in DTMF_MENU and cs.state in ("PROBLEM", "ANYTHING_ELSE"):
             utterance = DTMF_MENU[dtmf].get(cs.language if cs.language != Language.UNKNOWN else Language.DE)
             cs.state = "PROBLEM"
         text = (utterance or "").strip()
@@ -129,6 +133,13 @@ class VoiceDialog:
         cs.silences = 0
         if not dtmf:
             self._detect_language(cs, text)
+        if dtmf == "0" or (cs.state in ("PROBLEM", "ANYTHING_ELSE", "VERIFY_RELAY") and is_dissatisfied(text)):
+            return self._not_happy(cs, text if not dtmf else "[pressed 0 – asked for a person]", now)
+        ref = find_reference(text)
+        if ref and cs.state in ("PROBLEM", "ANYTHING_ELSE"):
+            r, line = status_line(self.p, ref, cs.language)
+            cs.state = "ANYTHING_ELSE"
+            return self._turn(cs, line.format(ref=spoken_reference(ref)) + " " + say("anything_else", cs.language))
 
         if cs.state == "PROBLEM":
             return self._problem(cs, text, now)
@@ -277,6 +288,16 @@ class VoiceDialog:
                 return True
         return False
 
+    def _not_happy(self, cs: CallState, text: str, now: datetime) -> Turn:
+        """The resident is not satisfied or wants a person: log a review ticket with a reference, then transfer."""
+        if not cs.tickets:   # nothing automated yet: record what they said as the first ticket so the colleague has context
+            self._handle(cs, text, now)
+        review, line = open_review(self.p, user_id=cs.user_id, partner_id=cs.partner_id, channel="voice", reason=text,
+                                   tickets=list(cs.tickets), language=cs.language, call_id=cs.call_id, now=now)
+        cs.review_reference = review["reference"]
+        spoken = line.format(ref=spoken_reference(review["reference"]))
+        return self._handoff(cs, "ESC_CUSTOMER_REQUEST", spoken + " " + say("handoff", cs.language), ticket_id=cs.tickets[-1] if cs.tickets else None)
+
     def _handoff(self, cs: CallState, reason: str, text: str, sms: str | None = None, ticket_id: str | None = None) -> Turn:
         cs.state, cs.outcome, cs.handoff_reason, cs.ended_at = "HANDOFF", "handoff", reason, self.clock()
         whisper = self._whisper(cs)
@@ -296,6 +317,8 @@ class VoiceDialog:
         elif cs.partner_id:
             who = f"partner {cs.partner_id}"
         parts = [f"Hotline transfer. {who}. Language {cs.language.value}."]
+        if cs.review_reference:
+            parts.append(f"Caller not satisfied; review ticket {cs.review_reference} logged.")
         out = cs.last_outcome
         if out:
             parts.append(f"Intent {out.triage.intent.value}. Reason {', '.join(out.decision.reason_codes[:3])}.")

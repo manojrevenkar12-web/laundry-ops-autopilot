@@ -87,6 +87,7 @@ The agent is a LangGraph `StateGraph` (`laundryops/support/graph.py`): `intake �
 | Goodwill credit | reservation held, box shows another session running | €1.50 · 1 per resident / 30 d |
 | Open fault ticket | machine resolvable | de-duplicated per machine; severity by signal; building manager notified |
 | Hand over to human | injection · legal/abuse · damage · no identity · no evidence · any cap hit | always; the reply says why in the resident's language |
+| Resident not satisfied | says so in any phrasing ("das hilft nicht", "I want a person"), presses 0, or clicks *not happy* in chat | a human-review ticket with a reference (`WR-yymmdd-nnn`) the resident hears/reads and gets by SMS; linked to what was already done; status answerable on any channel; ops queue in the console |
 | Refund after a voice "door still locked" | our own relay re-trigger for this session is in the audit store (≤ 15 min) **and** the caller confirms failure | same refund bounds; without the actuation on record the caller's word moves nothing |
 
 Everything in the right-hand column is configuration (`laundryops/config.py`, `LOPS_*` env), nothing is a prompt.

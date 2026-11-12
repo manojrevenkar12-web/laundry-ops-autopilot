@@ -277,3 +277,45 @@ def test_script_detection_and_translation_hook(platform, now):
     v.start("L2", "+4400000000", now)
     t = v.step("L2", "po polsku proszę", now=now)
     assert t.say.startswith("[pl] ")
+
+
+def test_not_happy_logs_review_with_reference_sms_and_status_lookup(platform, now):
+    _with_phones(platform)
+    ses, p = platform.payments.plant_paid_session("u_de", "WM-0001", 350, minutes_ago=60, state=CycleState.FINISHED, started=True)
+    platform.payments.plant_duplicate(p)
+    v = platform.voice
+    v.start("N1", "+4915100000001", now)
+    v.step("N1", "Mir wurde doppelt abgebucht für Maschine 1", now=now)
+    t = v.step("N1", "Das hilft mir nicht, ich will einen Mitarbeiter", now=now)
+    assert t.handoff and "Referenz" in t.say and "review ticket WR-" in t.whisper
+    ref = platform.store.list_reviews()[0]["reference"]
+    assert ref.startswith("WR-") and platform.store.list_reviews()[0]["tickets"] == ["N1_1"]
+    assert any(ref in m["body"] for m in platform.notifier.for_recipient("+4915100000001"))
+    # later, the resident asks for the status on the phone and in chat
+    v.start("N2", "+4915100000001", now)
+    t = v.step("N2", f"Was ist mit meinem Ticket {ref}?", now=now)
+    assert "offen" in t.say
+    platform.store.update_review(ref, "resolved")
+    from laundryops.domain.models import TicketIn
+    out = platform.handle_message(TicketIn(ticket_id="c1", user_id="u_de", text=f"Status von {ref} bitte"), now)
+    assert "erledigt" in out.reply and out.decision.reason_codes == ["ACT_INFO_REVIEW_STATUS"]
+
+
+def test_dtmf_zero_and_chat_not_happy_endpoint(platform, now, settings):
+    _with_phones(platform)
+    v = platform.voice
+    v.start("N3", "+4915100000002", now)
+    t = v.step("N3", dtmf="0", now=now)
+    assert t.handoff and "reference" in t.say.lower()
+    from laundryops.api import app as api
+    from laundryops.store.db import Store
+    from laundryops.support.service import Platform
+    api.platform = Platform(settings=settings, store=Store(":memory:"))
+    c = TestClient(api.app)
+    c.post("/demo/seed?n=5&seed=2")
+    tid = c.get("/tickets").json()[0]["ticket_id"]
+    r = c.post(f"/tickets/{tid}/not-happy", json={"reason": "answer did not help"}).json()
+    ref = r["review"]["reference"]
+    assert ref in r["message"] and c.get(f"/reviews/{ref}").json()["status"] == "open"
+    assert c.post(f"/reviews/{ref}/status", json={"status": "resolved", "note": "called back"}).json()["status"] == "resolved"
+    assert c.get("/metrics").json()["open_reviews"] == 0

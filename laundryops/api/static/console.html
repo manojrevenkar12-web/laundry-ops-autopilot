@@ -86,12 +86,14 @@
       <input id="sayText" placeholder="…or type what the caller says and press Enter" onkeydown="if(event.key==='Enter')callerSays(this.value)">
     </div>
     <div class="dtmf" style="margin-top:6px"><span class="muted" style="font-size:12px;align-self:center">DTMF:</span>
-      <button onclick="dtmf('1')">1 won’t start</button><button onclick="dtmf('2')">2 stopped</button><button onclick="dtmf('3')">3 charged twice</button><button onclick="dtmf('4')">4 refund status</button></div>
+      <button onclick="dtmf('1')">1 won’t start</button><button onclick="dtmf('2')">2 stopped</button><button onclick="dtmf('3')">3 charged twice</button><button onclick="dtmf('4')">4 refund status</button><button onclick="dtmf('0')">0 speak to a person</button></div>
     <div id="callStats" class="muted" style="font-size:12px;margin-top:6px"></div>
     <h2 style="margin-top:18px">Fleet health</h2>
     <table id="fleet"><thead><tr><th>Machine</th><th>Site</th><th>Score</th><th>Severity</th><th>Signals</th></tr></thead><tbody></tbody></table>
     <h2 style="margin-top:18px">Open faults &amp; SLA</h2>
     <table id="faults"><thead><tr><th>Fault</th><th>Machine</th><th>Sev</th><th>Status</th><th>Ack due</th><th>Fix due</th><th></th></tr></thead><tbody></tbody></table>
+    <h2 style="margin-top:18px">Human review queue <span class="muted" style="text-transform:none;letter-spacing:0;font-weight:400">— residents who weren’t satisfied or asked for a person</span></h2>
+    <table id="reviews"><thead><tr><th>Reference</th><th>Resident</th><th>Channel</th><th>Reason</th><th>Status</th><th></th></tr></thead><tbody></tbody></table>
     <h2 style="margin-top:18px">Partner payouts</h2>
     <table id="payouts"><thead><tr><th>Partner</th><th>Statement</th><th>Amount</th><th>E2E ref</th><th>Status</th></tr></thead><tbody></tbody></table>
   </section>
@@ -106,11 +108,12 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&
 async function get(u){const r=await fetch(u);if(!r.ok)throw new Error(await r.text());return r.json()}
 async function post(u,body){const r=await fetch(u,{method:'POST',headers:{'content-type':'application/json'},body:body?JSON.stringify(body):undefined});const j=await r.json().catch(()=>({}));await refresh();return j}
 async function refresh(){
-  const [h,m,t,f,fl,p,u]=await Promise.all([get('/health'),get('/metrics'),get('/tickets?limit=300'),get('/fleet/health'),get('/fleet/faults'),get('/settlement/payouts'),get('/demo/users?limit=40')]);
+  const [h,m,t,f,fl,p,u,rv]=await Promise.all([get('/health'),get('/metrics'),get('/tickets?limit=300'),get('/fleet/health'),get('/fleet/faults'),get('/settlement/payouts'),get('/demo/users?limit=40'),get('/reviews')]);
+  $('#reviews tbody').innerHTML=rv.slice(0,12).map(x=>`<tr><td><span class="chip">${x.reference}</span></td><td>${x.user_id||x.partner_id||'—'}</td><td>${x.channel}</td><td class="muted">${esc(x.reason).slice(0,60)}</td><td class="${x.status==='resolved'?'ok':x.status==='open'?'bad':'warn'}">${x.status}</td><td>${x.status==='open'?`<a href="#" onclick="post('/reviews/${x.reference}/status',{status:'in_review'});return false">take</a>`:x.status==='in_review'?`<a href="#" onclick="post('/reviews/${x.reference}/status',{status:'resolved'});return false">resolve</a>`:''}</td></tr>`).join('')||'<tr><td colspan=6 class="muted">Empty — no resident has asked for a person.</td></tr>';
   $('#mode').textContent=`triage: ${h.llm} · ${h.shadow?'SHADOW MODE (nothing executed)':'live execution'} · v${h.version}`;
   const relayOk=m.relay_retriggers?Math.round(100*m.relay_retrigger_success/m.relay_retriggers):0;
   $('#kpis').innerHTML=[['Tickets',m.tickets],['Deflection',(m.deflection_rate*100).toFixed(1)+'%'],['Refunds issued',`${m.refunds_issued} · ${eur(m.refund_total_cents)}`],
-    ['Relay re-triggers',`${m.relay_retriggers} · ${relayOk}% ok`],['Open faults',m.open_faults],['p50 handling',m.p50_handling_ms+' ms']]
+    ['Relay re-triggers',`${m.relay_retriggers} · ${relayOk}% ok`],['Open faults',m.open_faults],['Human review queue',m.open_reviews||0]]
     .map(([l,v])=>`<div class="kpi"><div class="v">${v}</div><div class="l">${l}</div></div>`).join('');
   $('#tickets tbody').innerHTML=t.map(x=>`<tr class="row" onclick="openTicket('${x.ticket_id}')"><td class="muted">${x.received_at.slice(11,19)}</td><td><span class="chip">${x.ticket_id}</span></td><td>${x.language}</td><td>${x.intent}</td><td class="${x.outcome==='auto_resolved'?'ok':'warn'}">${x.outcome}</td><td class="muted">${x.handled_in_ms}</td></tr>`).join('')||'<tr><td colspan=6 class="muted">No tickets yet — seed the demo or send one.</td></tr>';
   $('#fleet tbody').innerHTML=f.slice(0,12).map(x=>`<tr><td><span class="chip">${x.machine_id}</span></td><td>${x.site_id}</td><td>${x.score}</td><td class="sev-${x.severity}">${x.severity}</td><td class="muted">${x.signals.join(', ')||'—'}</td></tr>`).join('');
@@ -118,6 +121,7 @@ async function refresh(){
   $('#payouts tbody').innerHTML=p.map(x=>`<tr><td>${x.partner_id}</td><td><span class="chip">${x.statement_id}</span></td><td>${eur(x.amount_cents)}</td><td class="muted">${x.end_to_end_id}</td><td class="${x.status==='returned'?'bad':x.status==='settled'?'ok':''}">${x.status}</td></tr>`).join('')||'<tr><td colspan=5 class="muted">Run settlement to generate statements and a pain.001 file.</td></tr>';
   const sel=$('#user');if(!sel.options.length)sel.innerHTML=u.map(x=>`<option value="${x.user_id}">${esc(x.display_name)} · ${x.site_id} · ${x.language}</option>`).join('');
 }
+async function notHappy(id){const r=await post('/tickets/'+id+'/not-happy',{reason:'Resident not satisfied with the automated answer (console)'});$('#nh-'+id).textContent=r.message||JSON.stringify(r)}
 async function sendTicket(){const out=await post('/tickets',{text:$('#text').value,user_id:$('#user').value});await openTicket(out.ticket_id)}
 async function openTicket(id){
   const t=await get('/tickets/'+id);const d=t.outcome_detail;
@@ -130,6 +134,7 @@ async function openTicket(id){
    <p><b>Evidence</b> <span class="muted">${esc(JSON.stringify(d.evidence_summary)).slice(0,600)}</span></p>
    <p><b>Actions</b></p><ul>${acts||'<li class="muted">none</li>'}</ul>
    <p><b>Reply (${d.reply_language})</b></p><div class="reply">${esc(d.reply)}</div>
+   <p style="margin-top:8px"><button class="btn" style="background:#b42318" onclick="notHappy('${t.ticket_id}')">Resident not happy → log for a human</button> <span class="muted" id="nh-${t.ticket_id}"></span></p>
    <p><b>Audit trail</b></p><ul class="audit">${audit}</ul>`;
   drawer.classList.add('open');
 }

@@ -43,7 +43,7 @@ def health() -> dict[str, Any]:
 @app.post("/tickets")
 def create_ticket(req: TicketRequest) -> dict[str, Any]:
     tid = req.ticket_id or f"t_{int(datetime.now(timezone.utc).timestamp() * 1000)}"
-    out = platform.handle(TicketIn(ticket_id=tid, user_id=req.user_id, partner_id=req.partner_id, channel=req.channel, text=req.text))
+    out = platform.handle_message(TicketIn(ticket_id=tid, user_id=req.user_id, partner_id=req.partner_id, channel=req.channel, text=req.text))
     return out.model_dump(mode="json")
 
 
@@ -59,6 +59,60 @@ def get_ticket(ticket_id: str) -> dict[str, Any]:
         raise HTTPException(404, "ticket not found")
     t["audit"] = platform.store.audit_trail(ticket_id)
     return t
+
+
+class NotHappy(BaseModel):
+    reason: str = "Resident not satisfied with the automated answer"
+
+
+@app.post("/tickets/{ticket_id}/not-happy")
+def ticket_not_happy(ticket_id: str, req: NotHappy) -> dict[str, Any]:
+    """The resident says the answer did not help: log a human-review ticket, tell them the reference."""
+    from laundryops.domain.models import Language
+    from laundryops.support.review import open_review
+
+    t = platform.store.get_ticket(ticket_id)
+    if not t:
+        raise HTTPException(404, "ticket not found")
+    lang = Language.parse(t.get("language"))
+    review, line = open_review(platform, user_id=t.get("user_id"), partner_id=t.get("partner_id"), channel=t.get("channel") or "chat",
+                               reason=req.reason, tickets=[ticket_id], language=lang)
+    return {"review": review, "message": line.format(ref=review["reference"])}
+
+
+@app.get("/reviews")
+def list_reviews(status: str | None = None) -> list[dict[str, Any]]:
+    return platform.store.list_reviews(status)
+
+
+@app.get("/reviews/{reference}")
+def get_review(reference: str) -> dict[str, Any]:
+    """Resident-facing status lookup by reference (also answered on the hotline and in chat)."""
+    r = platform.store.get_review(reference)
+    if not r:
+        raise HTTPException(404, "no ticket with that reference")
+    return {"reference": r["reference"], "status": r["status"], "created_at": r["created_at"], "updated_at": r["updated_at"]}
+
+
+class ReviewUpdate(BaseModel):
+    status: str
+    note: str | None = None
+
+
+@app.post("/reviews/{reference}/status")
+def update_review(reference: str, req: ReviewUpdate) -> dict[str, Any]:
+    if req.status not in ("open", "in_review", "resolved"):
+        raise HTTPException(400, "status must be open | in_review | resolved")
+    r = platform.store.update_review(reference, req.status, req.note)
+    if not r:
+        raise HTTPException(404, "no ticket with that reference")
+    who = platform.directory.get_user(r["user_id"]) or platform.directory.get_partner(r["partner_id"])
+    to = (getattr(who, "phone", None) or getattr(who, "email", None) or getattr(who, "contact_email", None)) if who else None
+    if to:
+        platform.notifier.send(to, "sms" if to.startswith("+") else "email", f"Ticket {reference}",
+                               f"Status Ihres Tickets {reference}: {req.status}. / Your ticket {reference} is now: {req.status}.", reference=reference)
+    platform.store.audit("ops", "review_status", None, reference=reference, status=req.status)
+    return r
 
 
 @app.get("/metrics")
