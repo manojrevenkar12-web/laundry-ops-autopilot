@@ -21,7 +21,8 @@ from datetime import datetime
 from typing import Any
 
 from laundryops.domain.models import ActionType, Channel, Intent, Language, Outcome, TicketIn, TicketOutcome, utcnow
-from laundryops.llm.offline import detect_language, extract_machine_ref, language_scores
+from laundryops.domain.models import NATIVE_LANGUAGES
+from laundryops.llm.offline import detect_language, extract_machine_ref, language_request, language_scores
 from laundryops.voice.numbers import parse_machine_number, spoken_numbers_to_digits
 from laundryops.voice.prompts import HINTS, SPEECH_LOCALE, say
 from laundryops.voice.speech import shape_for_voice
@@ -150,16 +151,9 @@ class VoiceDialog:
         return self._finish(cs, "contained")
 
     # ---- internals -----------------------------------------------------------------
-    _LANG_REQUEST = {Language.EN: r"\b(english|englisch|anglais|ingl[eé]s|ingilizce)\b", Language.DE: r"\b(deutsch|german|allemand|alem[aá]n|almanca)\b",
-                     Language.TR: r"\b(t[üu]rk[çc]e|turkish|t[üu]rkisch)\b", Language.FR: r"\b(fran[çc]ais|french|franz[öo]sisch)\b",
-                     Language.ES: r"\b(espa[ñn]ol|spanish|spanisch)\b"}
-
-    def _language_request(self, text: str) -> Language | None:
-        t = text.lower()
-        for lang, pat in self._LANG_REQUEST.items():
-            if re.search(pat, t):
-                return lang
-        return None
+    @staticmethod
+    def _language_request(text: str) -> Language | None:
+        return language_request(text)
 
     def _detect_language(self, cs: CallState, text: str) -> None:
         """First real sentence sets the language; later sentences can still switch it on strong evidence."""
@@ -267,9 +261,14 @@ class VoiceDialog:
         return {Language.DE: "Ist die Tür jetzt offen?", Language.EN: "Is the door open now?", Language.TR: "Kapı şimdi açık mı?",
                 Language.FR: "La porte est-elle ouverte maintenant ?", Language.ES: "¿Está la puerta abierta ahora?"}.get(language, "Is the door open now?")
 
+    _EXTRA = {"yes": r"(sì|sim|tak|ja|da|ναι|да|так|نعم|بله|ہاں|हाँ|হ্যাঁ|是|はい|네|vâng|yes)",
+              "no": r"(no|não|nie|nee|nu|όχι|нет|ні|لا|نه|نہیں|नहीं|না|不|いいえ|아니요|không)"}
+
     def _matches(self, cs: CallState, text: str, key: str) -> bool:
-        """Yes/no in any of the five languages — callers answer short questions in whatever comes first."""
+        """Yes/no in any language we know — callers answer short questions in whatever comes first."""
         t = text.lower().strip()
+        if cs.language not in NATIVE_LANGUAGES and re.search(r"(?<!\w)" + self._EXTRA[key] + r"(?!\w)", t):
+            return True
         langs = [cs.language] + [l for l in (Language.DE, Language.EN, Language.TR, Language.FR, Language.ES) if l != cs.language]
         for lang in langs:
             if lang == Language.UNKNOWN:
@@ -283,6 +282,7 @@ class VoiceDialog:
         whisper = self._whisper(cs)
         self.p.store.audit("voice", "call_handoff", ticket_id, call_id=cs.call_id, reason=reason, whisper=whisper)
         self._persist(cs)
+        text = self._localize(cs, text)
         cs.transcript.append({"who": "agent", "text": text})
         return Turn(say=text, listen=False, language=cs.language, locale=SPEECH_LOCALE.get(cs.language, "de-DE"), done=True,
                     handoff=True, whisper=whisper, sms=sms, state=cs.state, ticket_id=ticket_id)
@@ -308,14 +308,20 @@ class VoiceDialog:
 
     def _finish(self, cs: CallState, outcome: str, text: str | None = None, sms: str | None = None) -> Turn:
         cs.state, cs.outcome, cs.ended_at = "DONE", outcome, self.clock()
-        text = text or say("goodbye", cs.language)
+        text = self._localize(cs, text or say("goodbye", cs.language))
         self.p.store.audit("voice", "call_ended", None, call_id=cs.call_id, outcome=outcome, turns=cs.turns, tickets=cs.tickets)
         self._persist(cs)
         cs.transcript.append({"who": "agent", "text": text})
         return Turn(say=text, listen=False, language=cs.language, locale=SPEECH_LOCALE.get(cs.language, "de-DE"), done=True,
                     sms=sms, state=cs.state)
 
+    def _localize(self, cs: CallState, text: str) -> str:
+        if cs.language in NATIVE_LANGUAGES or cs.language == Language.UNKNOWN:
+            return text
+        return self.p.llm.translate(text, cs.language)
+
     def _turn(self, cs: CallState, text: str, ticket_id: str | None = None) -> Turn:
+        text = self._localize(cs, text)
         cs.transcript.append({"who": "agent", "text": text})
         self._persist(cs)
         lang = cs.language if cs.language != Language.UNKNOWN else Language.DE

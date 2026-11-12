@@ -181,7 +181,7 @@ The agent only talks to three ports: `TelemetryPort`, `PaymentPort`, `Directory`
 ## Known limits
 
 * Mocks stand in for the box backend, the PSP and the app directory; the schemas are plausible, not WeWash's.
-* The rules triage handles the five eval languages; the live model handles any language.
+* Languages: German first on the hotline, then whatever the caller asks for ("do you speak English?", "parla italiano?", "можно по-русски?") or writes in. Five languages (DE, EN, TR, FR, ES) have hand-written templates and rules triage; 17 more (IT, PT, PL, NL, RO, EL, RU, UK, AR, FA, UR, HI, BN, ZH, JA, KO, VI) are detected by script or request and served through the live model's translation of the fact-based text — offline they fall back to English. Any other language the live model triages; replies then come in English.
 * Voice: the Twilio-webhook path recognises speech in the language the dialog last detected; a caller who switches language mid-sentence is better served by the Media Streams path with a multilingual STT. The Deepgram/ElevenLabs clients are thin and not exercised in CI.
 * Replies are template-grade in offline mode; the live model writes better prose from the same facts.
 * Settlement covers EUR SEPA credit transfers only (no SEPA direct debit, no multi-currency).

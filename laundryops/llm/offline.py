@@ -25,7 +25,52 @@ _LANG_MARKERS: dict[Language, list[str]] = {
                   "prélev", "débit", "rembours"],
     Language.ES: ["la ", "no ", "me ", "lavadora", "secadora", "máquina", "está", "dinero", "gracias",
                   "cobr", "reembolso", "mi "],
+    Language.IT: ["lavatrice", "asciugatrice", "non ", "soldi", "rimborso", "grazie", "addebit", "macchina ", "porta "],
+    Language.PT: ["máquina de lavar", "secadora", "não ", "dinheiro", "reembolso", "obrigad", "cobra", "porta "],
+    Language.PL: ["pralka", "suszarka", "nie ", "pieniądze", "zwrot", "dziękuję", "drzwi", "zapłaci"],
+    Language.NL: ["wasmachine", "droger", "niet ", "geld", "terugbetaling", "bedankt", "deur", "betaald"],
+    Language.RO: ["mașina de spălat", "uscător", "nu ", "bani", "rambursare", "mulțumesc", "ușa"],
 }
+_SCRIPTS: list[tuple[str, Language]] = [
+    (r"[\u0400-\u04FF]", Language.RU), (r"[\u0600-\u06FF]", Language.AR), (r"[\u0900-\u097F]", Language.HI),
+    (r"[\u0980-\u09FF]", Language.BN), (r"[\u0370-\u03FF]", Language.EL), (r"[\u4E00-\u9FFF]", Language.ZH),
+    (r"[\u3040-\u30FF]", Language.JA), (r"[\uAC00-\uD7AF]", Language.KO),
+]
+_SCRIPT_REFINE = {Language.RU: [(r"[іїєґ]", Language.UK)], Language.AR: [(r"[پچژگ]", Language.FA), (r"[ٹڈڑےں]", Language.UR)]}
+
+# "Do you speak English?" in many spellings — an explicit request beats detection.
+LANGUAGE_REQUESTS: dict[Language, str] = {
+    Language.EN: r"\b(english|englisch|anglais|ingl[eé]s|ingilizce|inglese|angielski|engels|английск|انجليزي|अंग्रेज़ी|अंग्रेजी)\b",
+    Language.DE: r"\b(deutsch|german|allemand|alem[aá]n|almanca|tedesco|niemiecki|duits|немецк)\b",
+    Language.TR: r"\b(t[üu]rk[çc]e|turkish|t[üu]rkisch|turc|turco)\b",
+    Language.FR: r"\b(fran[çc]ais|french|franz[öo]sisch|franc[eé]s)\b",
+    Language.ES: r"\b(espa[ñn]ol|spanish|spanisch|castellano)\b",
+    Language.IT: r"\b(italiano|italian|italienisch|italien)\b",
+    Language.PT: r"\b(portugu[eê]s|portuguese|portugiesisch)\b",
+    Language.PL: r"\b(polski|po polsku|polish|polnisch)\b",
+    Language.NL: r"\b(nederlands|dutch|niederl[äa]ndisch)\b",
+    Language.RO: r"\b(rom[âa]n[ăa]|romanian|rum[äa]nisch)\b",
+    Language.EL: r"\b(ελληνικ|greek|griechisch)\b",
+    Language.RU: r"\b(русск|по-русски|russian|russisch)\b",
+    Language.UK: r"\b(україн|ukrainian|ukrainisch)\b",
+    Language.AR: r"(عربي|العربية|\barabic\b|\barabisch\b)",
+    Language.FA: r"(فارسی|\bfarsi\b|\bpersian\b|\bpersisch\b)",
+    Language.UR: r"(اردو|\burdu\b)",
+    Language.HI: r"(हिंदी|हिन्दी|\bhindi\b)",
+    Language.BN: r"(বাংলা|\bbengali\b|\bbangla\b)",
+    Language.ZH: r"(中文|汉语|普通话|\bchinese\b|\bmandarin\b|\bchinesisch\b)",
+    Language.JA: r"(日本語|\bjapanese\b|\bjapanisch\b)",
+    Language.KO: r"(한국어|\bkorean\b|\bkoreanisch\b)",
+    Language.VI: r"(tiếng việt|\bvietnamese\b|\bvietnamesisch\b)",
+}
+
+
+def language_request(text: str) -> Language | None:
+    t = text.lower()
+    for lang, pat in LANGUAGE_REQUESTS.items():
+        if re.search(pat, t):
+            return lang
+    return None
 
 
 def fold_case(text: str) -> str:
@@ -49,6 +94,12 @@ def language_scores(text: str) -> dict[Language, int]:
 
 
 def detect_language(text: str, hint: Language | None = None) -> Language:
+    for pat, lang in _SCRIPTS:                      # non-Latin scripts are unambiguous
+        if re.search(pat, text):
+            for sub, refined in _SCRIPT_REFINE.get(lang, []):
+                if re.search(sub, text):
+                    return refined
+            return lang
     scores = language_scores(text)
     best = max(scores, key=scores.get)
     if scores[best] == 0:
@@ -165,3 +216,7 @@ class OfflineLLM:
     def draft_reply(self, facts: dict[str, Any], language: Language) -> str:
         from laundryops.support.templates import render_reply
         return render_reply(facts, language)
+
+    def translate(self, text: str, language: Language) -> str:
+        """No model offline: non-native languages are served in English."""
+        return text

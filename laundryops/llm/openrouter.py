@@ -102,6 +102,7 @@ class OpenRouterLLM:
             try:
                 raw = self._chat(prompts.TRIAGE_SYSTEM, user, json_mode=True)
                 data = json.loads(raw[raw.find("{"): raw.rfind("}") + 1])
+                data["language"] = Language.parse(data.get("language")).value
                 tr = TriageResult.model_validate(data)
                 # The regex is more reliable than the model for ids; prefer it when it finds one.
                 tr.machine_ref = extract_machine_ref(text) or tr.machine_ref
@@ -130,6 +131,27 @@ class OpenRouterLLM:
             if not self._allow_fallback:
                 raise
             return self._fallback.draft_reply(facts, language)
+
+
+TRANSLATE_SYSTEM = """Translate the message into the requested language for a laundry-room resident on the phone or in chat.
+Keep every number, amount, machine name and reference exactly as given. Keep it the same length. Output the translation only."""
+
+
+def _translate(self: "OpenRouterLLM", text: str, language: Language) -> str:
+    from laundryops.domain.models import NATIVE_LANGUAGES
+
+    if language in NATIVE_LANGUAGES or language == Language.UNKNOWN or not text.strip():
+        return text
+    try:
+        raw = self._chat(TRANSLATE_SYSTEM, f"language={language.value}\n{text}", json_mode=False).strip()
+        clean, removed = scrub_unapproved_numbers(raw, {"text": text})
+        return text if removed or len(clean) < 2 else clean
+    except Exception as e:  # provider down: English rather than silence
+        log.error("translate failure: %s", e)
+        return text
+
+
+OpenRouterLLM.translate = _translate
 
 
 def build_llm(settings: Settings):

@@ -71,7 +71,7 @@
     <h2 style="margin-top:18px">Hotline demo <span class="muted" style="text-transform:none;letter-spacing:0;font-weight:400">— same agent, on the phone (browser speech, no keys)</span></h2>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
       <select id="scenario" style="flex:1"><option value="door_locked">door locked → re-trigger, verify, refund</option><option value="relay_fault">relay fault → refund + fault ticket</option><option value="aborted">cycle died → refund + fault ticket</option><option value="double_charge">charged twice → duplicate refunded</option><option value="refund_status">refund status</option><option value="damage">damage claim → hand-over</option><option value="unknown_caller">unknown number → SMS + transfer</option></select>
-      <select id="lang" style="width:90px"><option value="de">DE</option><option value="en">EN</option><option value="tr">TR</option><option value="fr">FR</option><option value="es">ES</option></select>
+      <select id="lang" style="width:90px"><option value="de">DE</option><option value="en">EN</option><option value="tr">TR</option><option value="fr">FR</option><option value="es">ES</option><option value="it">IT</option><option value="pl">PL</option><option value="ru">RU</option><option value="uk">UK</option><option value="ar">AR</option><option value="hi">HI</option><option value="zh">ZH</option></select>
       <button class="btn" style="background:#0E7C86" onclick="stageScenario()">Stage</button>
     </div>
     <div id="stageHint" class="muted" style="font-size:12px;margin-bottom:8px">Stage a scenario first: it creates a fresh resident whose booking nothing has touched yet, and tells you what to say.</div>

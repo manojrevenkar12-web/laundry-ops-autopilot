@@ -232,3 +232,50 @@ def test_staged_scenarios_run_end_to_end(platform, now):
     assert "3 Euro 50" in t.say and v.calls["S1"].last_outcome.decision.reason_codes[0] == "EV_RETRIGGER_CONFIRMED_FAILED"
     for sc in SCENARIOS:
         stage(platform, sc, "en", now)            # every scenario stages without error
+
+
+def test_german_first_then_switch_on_request_any_language(platform, now):
+    from laundryops.demo_stage import stage
+    v = platform.voice
+    info = stage(platform, "door_locked", "de", now)
+    n = int(info["machine"]["label"].split()[-1])
+    t = v.start("L1", info["from_number"], now)
+    assert t.locale == "de-DE" and t.say.startswith("Hallo")
+    t = v.step("L1", "Do you speak English?", now=now)
+    assert t.language == Language.EN and "What can I do for you" in t.say
+    t = v.step("L1", "parla italiano?", now=now)
+    assert t.language == Language.IT and t.locale == "it-IT"
+    t = v.step("L1", "можно по-русски?", now=now)
+    assert t.language == Language.RU
+    t = v.step("L1", "я заплатил но дверь не открывается", now=now)
+    assert t.state in ("ASK_MACHINE", "VERIFY_RELAY")
+    if t.state == "ASK_MACHINE":
+        t = v.step("L1", str(n), now=now)
+    assert t.state == "VERIFY_RELAY"
+    t = v.step("L1", "нет, всё ещё закрыто", now=now)
+    assert v.calls["L1"].last_outcome.decision.reason_codes[0] == "EV_RETRIGGER_CONFIRMED_FAILED"
+
+
+def test_script_detection_and_translation_hook(platform, now):
+    from laundryops.llm.offline import detect_language, language_request
+    assert detect_language("Машина не работает") == Language.RU
+    assert detect_language("Машина не працює, гроші списані") == Language.UK
+    assert detect_language("الغسالة لا تعمل") == Language.AR
+    assert detect_language("मशीन चालू नहीं हो रही") == Language.HI
+    assert detect_language("洗衣机打不开") == Language.ZH
+    assert language_request("sprechen Sie englisch?") == Language.EN
+    assert language_request("हिंदी में बात कर सकते हैं?") == Language.HI
+
+    class StubTranslate:
+        name = "stub"
+        def triage(self, text, hint_language=None, is_partner=False):
+            return platform.llm.triage(text, hint_language, is_partner)
+        def draft_reply(self, facts, language):
+            return platform.llm.draft_reply(facts, language)
+        def translate(self, text, language):
+            return f"[{language.value}] " + text
+    platform.llm = StubTranslate(); platform.voice.p = platform
+    v = platform.voice
+    v.start("L2", "+4400000000", now)
+    t = v.step("L2", "po polsku proszę", now=now)
+    assert t.say.startswith("[pl] ")

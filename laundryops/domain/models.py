@@ -19,12 +19,44 @@ def utcnow() -> datetime:
 # Enumerations
 # ---------------------------------------------------------------------------------
 class Language(StrEnum):
+    """Languages the platform speaks. The first five have hand-written templates and rules triage ("native");
+    the rest are served through the live model (translation of fact-based text) and fall back to English offline."""
     DE = "de"
     EN = "en"
     TR = "tr"
     FR = "fr"
     ES = "es"
+    IT = "it"
+    PT = "pt"
+    PL = "pl"
+    NL = "nl"
+    RO = "ro"
+    EL = "el"
+    RU = "ru"
+    UK = "uk"
+    AR = "ar"
+    FA = "fa"
+    UR = "ur"
+    HI = "hi"
+    BN = "bn"
+    ZH = "zh"
+    JA = "ja"
+    KO = "ko"
+    VI = "vi"
     UNKNOWN = "unknown"
+
+    @classmethod
+    def parse(cls, code: str | None) -> "Language":
+        if not code:
+            return cls.UNKNOWN
+        code = code.lower().split("-")[0]
+        try:
+            return cls(code)
+        except ValueError:
+            return cls.UNKNOWN
+
+
+NATIVE_LANGUAGES = {Language.DE, Language.EN, Language.TR, Language.FR, Language.ES}
 
 
 class Channel(StrEnum):

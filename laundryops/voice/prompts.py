@@ -10,7 +10,10 @@ from laundryops.domain.models import Language
 # BCP-47 tags for telephony speech recognition / synthesis.
 SPEECH_LOCALE: dict[Language, str] = {
     Language.DE: "de-DE", Language.EN: "en-GB", Language.TR: "tr-TR", Language.FR: "fr-FR", Language.ES: "es-ES",
-    Language.UNKNOWN: "de-DE",
+    Language.IT: "it-IT", Language.PT: "pt-PT", Language.PL: "pl-PL", Language.NL: "nl-NL", Language.RO: "ro-RO",
+    Language.EL: "el-GR", Language.RU: "ru-RU", Language.UK: "uk-UA", Language.AR: "ar-SA", Language.FA: "fa-IR",
+    Language.UR: "ur-PK", Language.HI: "hi-IN", Language.BN: "bn-IN", Language.ZH: "zh-CN", Language.JA: "ja-JP",
+    Language.KO: "ko-KR", Language.VI: "vi-VN", Language.UNKNOWN: "de-DE",
 }
 
 # Words the recogniser should bias towards (Twilio `hints`, Deepgram keywords).
@@ -26,7 +29,7 @@ _S: dict[Language, dict[str, str]] = {
     Language.DE: {
         "greet_known": "Hallo {name}, hier ist der Waschraum-Service. Was kann ich für Sie tun?",
         "what_else": "Gern. Was kann ich für Sie tun?",
-        "greet_unknown": "Hallo, hier ist der Waschraum-Service. Sie können auf Deutsch oder Englisch sprechen. Was kann ich für Sie tun?",
+        "greet_unknown": "Hallo, hier ist der Waschraum-Service. Sie können in Ihrer Sprache sprechen — you can speak your own language. Was kann ich für Sie tun?",
         "ask_machine": "Welche Maschine ist es? Die Nummer steht auf dem Aufkleber an der Maschine.",
         "ask_repeat": "Das habe ich leider nicht verstanden. Können Sie das bitte noch einmal sagen?",
         "anything_else": "Kann ich sonst noch etwas für Sie tun?",
@@ -40,7 +43,7 @@ _S: dict[Language, dict[str, str]] = {
     Language.EN: {
         "greet_known": "Hi {name}, this is the laundry room service. What can I do for you?",
         "what_else": "Of course. What can I do for you?",
-        "greet_unknown": "Hi, this is the laundry room service. You can speak German or English. What can I do for you?",
+        "greet_unknown": "Hi, this is the laundry room service. You can speak your own language. What can I do for you?",
         "ask_machine": "Which machine is it? The number is on the sticker on the machine.",
         "ask_repeat": "Sorry, I didn't catch that. Could you say it again?",
         "anything_else": "Is there anything else I can do for you?",
@@ -97,5 +100,6 @@ _S: dict[Language, dict[str, str]] = {
 
 
 def say(key: str, language: Language, **kw) -> str:
+    """Native languages have hand-written lines; any other language gets the English line (the dialog translates it)."""
     table = _S.get(language, _S[Language.EN])
     return table[key].format(**kw)

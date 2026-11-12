@@ -102,6 +102,9 @@ class SupportGraph:
         facts = build_facts(ev, d, results if not self.shadow else None, self.shadow)
         lang = st["triage"].language if st["triage"].language != Language.UNKNOWN else (ev.user.language if ev.user else Language.EN)
         reply = self.llm.draft_reply(facts, lang)
+        from laundryops.domain.models import NATIVE_LANGUAGES
+        if lang not in NATIVE_LANGUAGES:
+            reply = self.llm.translate(reply, lang)
         outcome = d.outcome
         if any(r.type.value == "escalate_human" for r in results):
             outcome = Outcome.ESCALATED
