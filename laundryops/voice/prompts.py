@@ -25,6 +25,7 @@ HINTS: dict[Language, str] = {
 _S: dict[Language, dict[str, str]] = {
     Language.DE: {
         "greet_known": "Hallo {name}, hier ist der Waschraum-Service. Was kann ich für Sie tun?",
+        "what_else": "Gern. Was kann ich für Sie tun?",
         "greet_unknown": "Hallo, hier ist der Waschraum-Service. Sie können auf Deutsch oder Englisch sprechen. Was kann ich für Sie tun?",
         "ask_machine": "Welche Maschine ist es? Die Nummer steht auf dem Aufkleber an der Maschine.",
         "ask_repeat": "Das habe ich leider nicht verstanden. Können Sie das bitte noch einmal sagen?",
@@ -38,6 +39,7 @@ _S: dict[Language, dict[str, str]] = {
     },
     Language.EN: {
         "greet_known": "Hi {name}, this is the laundry room service. What can I do for you?",
+        "what_else": "Of course. What can I do for you?",
         "greet_unknown": "Hi, this is the laundry room service. You can speak German or English. What can I do for you?",
         "ask_machine": "Which machine is it? The number is on the sticker on the machine.",
         "ask_repeat": "Sorry, I didn't catch that. Could you say it again?",
@@ -51,6 +53,7 @@ _S: dict[Language, dict[str, str]] = {
     },
     Language.TR: {
         "greet_known": "Merhaba {name}, çamaşırhane servisi. Size nasıl yardımcı olabilirim?",
+        "what_else": "Tabii. Size nasıl yardımcı olabilirim?",
         "greet_unknown": "Merhaba, çamaşırhane servisi. Size nasıl yardımcı olabilirim?",
         "ask_machine": "Hangi makine? Numara makinenin üzerindeki etikette yazıyor.",
         "ask_repeat": "Üzgünüm, anlayamadım. Tekrar söyleyebilir misiniz?",
@@ -64,6 +67,7 @@ _S: dict[Language, dict[str, str]] = {
     },
     Language.FR: {
         "greet_known": "Bonjour {name}, ici le service laverie. Que puis-je faire pour vous ?",
+        "what_else": "Bien sûr. Que puis-je faire pour vous ?",
         "greet_unknown": "Bonjour, ici le service laverie. Que puis-je faire pour vous ?",
         "ask_machine": "De quelle machine s'agit-il ? Le numéro est sur l'étiquette de la machine.",
         "ask_repeat": "Désolé, je n'ai pas compris. Pouvez-vous répéter ?",
@@ -77,6 +81,7 @@ _S: dict[Language, dict[str, str]] = {
     },
     Language.ES: {
         "greet_known": "Hola {name}, servicio de lavandería. ¿En qué puedo ayudarte?",
+        "what_else": "Claro. ¿En qué puedo ayudarte?",
         "greet_unknown": "Hola, servicio de lavandería. ¿En qué puedo ayudarte?",
         "ask_machine": "¿Qué máquina es? El número está en la pegatina de la máquina.",
         "ask_repeat": "Perdona, no lo he entendido. ¿Puedes repetirlo?",

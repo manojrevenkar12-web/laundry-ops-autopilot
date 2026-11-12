@@ -150,8 +150,23 @@ class VoiceDialog:
         return self._finish(cs, "contained")
 
     # ---- internals -----------------------------------------------------------------
+    _LANG_REQUEST = {Language.EN: r"\b(english|englisch|anglais|ingl[eé]s|ingilizce)\b", Language.DE: r"\b(deutsch|german|allemand|alem[aá]n|almanca)\b",
+                     Language.TR: r"\b(t[üu]rk[çc]e|turkish|t[üu]rkisch)\b", Language.FR: r"\b(fran[çc]ais|french|franz[öo]sisch)\b",
+                     Language.ES: r"\b(espa[ñn]ol|spanish|spanisch)\b"}
+
+    def _language_request(self, text: str) -> Language | None:
+        t = text.lower()
+        for lang, pat in self._LANG_REQUEST.items():
+            if re.search(pat, t):
+                return lang
+        return None
+
     def _detect_language(self, cs: CallState, text: str) -> None:
         """First real sentence sets the language; later sentences can still switch it on strong evidence."""
+        asked = self._language_request(text)
+        if asked:
+            cs.language, cs.language_locked = asked, True
+            return
         hint = cs.language if cs.language != Language.UNKNOWN else None
         if cs.language_locked:
             scores = language_scores(text)
@@ -181,6 +196,13 @@ class VoiceDialog:
             return self._handoff(cs, "too_many_requests", say("handoff", cs.language))
         text = spoken_numbers_to_digits(text)
         tr = self.p.llm.triage(text, hint_language=cs.language, is_partner=bool(cs.partner_id))
+        # "Do you speak English?" / small talk: switch language if asked and simply ask again what they need.
+        if tr.intent in (Intent.UNKNOWN, Intent.GENERAL_QUESTION) and (self._language_request(text) or len(text.split()) <= 4) \
+                and tr.intent != Intent.GENERAL_QUESTION:
+            cs.silences += 1
+            if cs.silences > MAX_SILENCES:
+                return self._handoff(cs, "unclear", say("handoff", cs.language))
+            return self._turn(cs, say("what_else", cs.language))
         needs_machine = tr.intent in MACHINE_INTENTS and extract_machine_ref(text) is None
         if needs_machine and cs.user_id and not self._single_recent_session(cs.user_id, now):
             cs.state, cs.pending_text = "ASK_MACHINE", text
