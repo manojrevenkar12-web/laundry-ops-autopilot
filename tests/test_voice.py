@@ -266,15 +266,13 @@ def test_script_detection_and_translation_hook(platform, now):
     assert language_request("sprechen Sie englisch?") == Language.EN
     assert language_request("हिंदी में बात कर सकते हैं?") == Language.HI
 
-    class StubTranslate:
+    from laundryops.llm.offline import OfflineLLM
+
+    class StubTranslate(OfflineLLM):
         name = "stub"
-        def triage(self, text, hint_language=None, is_partner=False):
-            return platform.llm.triage(text, hint_language, is_partner)
-        def draft_reply(self, facts, language):
-            return platform.llm.draft_reply(facts, language)
         def translate(self, text, language):
             return f"[{language.value}] " + text
-    platform.llm = StubTranslate(); platform.voice.p = platform
+    platform.llm = StubTranslate()
     v = platform.voice
     v.start("L2", "+4400000000", now)
     t = v.step("L2", "po polsku proszę", now=now)
