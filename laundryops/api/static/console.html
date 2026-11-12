@@ -70,6 +70,12 @@
     </div>
     <h2 style="margin-top:18px">Hotline demo <span class="muted" style="text-transform:none;letter-spacing:0;font-weight:400">— same agent, on the phone (browser speech, no keys)</span></h2>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+      <select id="scenario" style="flex:1"><option value="door_locked">door locked → re-trigger, verify, refund</option><option value="relay_fault">relay fault → refund + fault ticket</option><option value="aborted">cycle died → refund + fault ticket</option><option value="double_charge">charged twice → duplicate refunded</option><option value="refund_status">refund status</option><option value="damage">damage claim → hand-over</option><option value="unknown_caller">unknown number → SMS + transfer</option></select>
+      <select id="lang" style="width:90px"><option value="de">DE</option><option value="en">EN</option><option value="tr">TR</option><option value="fr">FR</option><option value="es">ES</option></select>
+      <button class="btn" style="background:#0E7C86" onclick="stageScenario()">Stage</button>
+    </div>
+    <div id="stageHint" class="muted" style="font-size:12px;margin-bottom:8px">Stage a scenario first: it creates a fresh resident whose booking nothing has touched yet, and tells you what to say.</div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
       <select id="caller" style="flex:1"></select>
       <button class="btn" id="callBtn" onclick="startCall()">Call the hotline</button>
       <button class="btn" style="background:#5b6775" onclick="endCall()">Hang up</button>
@@ -137,6 +143,9 @@ function listen(locale){if(!SR||!call||call.done)return;try{rec=new SR();rec.lan
 async function agentTurn(t){call=t;log('agent',t.say);if(t.sms)log('sys','SMS → caller: '+t.sms);if(t.handoff)log('sys','WARM TRANSFER · whisper to human agent: '+t.whisper);
   $('#callStats').textContent=`state ${t.state} · language ${t.language} · ${t.ticket_id?'ticket '+t.ticket_id:''}`;
   await speak(t.say,t.locale);if(t.done){log('sys','call ended');await refresh();await loadCalls();return}listen(t.locale)}
+async function stageScenario(){const r=await fetch(`/demo/stage?scenario=${$('#scenario').value}&language=${$('#lang').value}`,{method:'POST'});const d=await r.json();
+  const sel=$('#caller');const opt=document.createElement('option');opt.value=d.from_number;opt.textContent=`${d.caller_name} · ${d.from_number} · ${d.language} (staged)`;sel.insertBefore(opt,sel.firstChild);sel.value=d.from_number;
+  $('#stageHint').innerHTML=`<b>${esc(d.description)}</b><br>Machine: ${esc(d.machine.label)} (${d.machine.machine_id}). Say: <i>${esc(d.what_to_say)}</i>`}
 async function startCall(){$('#callLog').innerHTML='';if(window.speechSynthesis)speechSynthesis.getVoices();const from=$('#caller').value||null;
   const t=await post('/voice/demo/start',{from_number:from});log('sys',`incoming call from ${from||'unknown number'}`);await agentTurn(t)}
 async function callerSays(text){if(!call||call.done)return;if(rec){try{rec.abort()}catch(e){}}$('#sayText').value='';if(text)log('caller',text);else log('sys','(silence)');

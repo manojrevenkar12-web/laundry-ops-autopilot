@@ -66,6 +66,37 @@ def _demo(args: argparse.Namespace) -> int:
     return 0
 
 
+def _call(args: argparse.Namespace) -> int:
+    """Interactive hotline rehearsal in the terminal: stage a scenario, then type what the caller says."""
+    from laundryops.demo_stage import SCENARIOS, stage
+    from laundryops.store.db import Store
+    from laundryops.support.service import Platform
+
+    platform = Platform(settings=Settings(db_path=":memory:", llm_mode=args.llm), store=Store(":memory:"))
+    info = stage(platform, args.scenario, args.lang)
+    print(f"[{args.scenario}] {info['description']}")
+    print(f"caller: {info['caller_name']} {info['from_number']} · machine {info['machine']['label']} ({info['machine']['machine_id']})")
+    print(f"try saying: {info['what_to_say']}\n")
+    turn = platform.voice.start("CLI1", info["from_number"])
+    print("AGENT :", turn.say)
+    while not turn.done:
+        try:
+            text = input("CALLER: ")
+        except EOFError:
+            break
+        turn = platform.voice.step("CLI1", text)
+        print("AGENT :", turn.say, f"   [{turn.state}]")
+        if turn.sms:
+            print("  (SMS to caller:", turn.sms + ")")
+        if turn.handoff:
+            print("  (warm transfer — whisper to human:", turn.whisper + ")")
+    cs = platform.voice.calls["CLI1"]
+    if cs.last_outcome:
+        print("\nticket:", cs.last_outcome.decision.reason_codes, [(a.type.value, a.success, a.detail.get("amount_cents")) for a in cs.last_outcome.actions])
+    print("call:", cs.outcome, "turns:", cs.turns)
+    return 0
+
+
 def _graph(args: argparse.Namespace) -> int:
     from laundryops.store.db import Store
     from laundryops.support.service import Platform
@@ -97,6 +128,11 @@ def main(argv: list[str] | None = None) -> int:
     d.add_argument("--llm", default="offline", choices=["offline", "openrouter"])
     d.add_argument("--shadow", action="store_true")
     d.set_defaults(fn=_demo)
+    c = sub.add_parser("call", help="rehearse the hotline in the terminal against a staged scenario")
+    c.add_argument("--scenario", default="door_locked")
+    c.add_argument("--lang", default="de", choices=["de", "en", "tr", "fr", "es"])
+    c.add_argument("--llm", default="offline", choices=["offline", "openrouter"])
+    c.set_defaults(fn=_call)
     g = sub.add_parser("graph", help="print the LangGraph flow as Mermaid")
     g.set_defaults(fn=_graph)
     args = p.parse_args(argv)

@@ -113,6 +113,8 @@ class VoiceDialog:
         cs = self.calls.get(call_id)
         if cs is None:
             return Turn(say="", listen=False, done=True)
+        if cs.state in ("HANDOFF", "DONE"):       # a finished call stays finished; late audio changes nothing
+            return Turn(say="", listen=False, done=True, handoff=cs.state == "HANDOFF", language=cs.language, state=cs.state)
         now = now or self.clock()
         cs.turns += 1
         if dtmf and dtmf in DTMF_MENU and cs.state in ("PROBLEM", "ANYTHING_ELSE"):

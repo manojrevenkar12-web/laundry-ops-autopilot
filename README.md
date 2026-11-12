@@ -135,7 +135,8 @@ Docker: `docker compose up --build`, then `curl -X POST localhost:8000/demo/seed
 
 ### Try the hotline
 
-* **In the browser (no keys):** open `/console`, pick a resident under *Hotline demo*, press *Call the hotline* and talk (Chrome/Edge use the Web Speech API; elsewhere type what the caller says). The transcript shows what the agent did, the SMS it sent and the whisper a human would hear on transfer.
+* **In the terminal:** `laundryops call --scenario door_locked --lang de` stages a fresh resident and runs the dialog interactively (scenarios: door_locked, relay_fault, aborted, double_charge, refund_status, damage, unknown_caller).
+* **In the browser (no keys):** open `/console`, under *Hotline demo* pick a scenario and press *Stage* (creates a fresh caller whose booking nothing has touched yet), then *Call the hotline* and talk (Chrome/Edge use the Web Speech API; elsewhere type what the caller says). The transcript shows what the agent did, the SMS it sent and the whisper a human would hear on transfer.
 * **On a real phone number (Twilio):** set `LOPS_VOICE_PUBLIC_BASE_URL` to your public URL, point the number's voice webhook at `POST /voice/incoming`, set `LOPS_VOICE_HUMAN_NUMBER` for transfers and `LOPS_VOICE_SMS_FROM` for texts. Twilio does the speech recognition per turn with the language and hints the dialog returns.
 * **Real-time (Twilio Media Streams):** `<Connect><Stream url="wss://…/voice/stream">` with `from` as a custom parameter; set `LOPS_STT_PROVIDER=deepgram` + `LOPS_DEEPGRAM_API_KEY` and `LOPS_TTS_PROVIDER=elevenlabs` + `LOPS_ELEVENLABS_API_KEY` / `LOPS_ELEVENLABS_VOICE_ID`. Without keys the pipeline runs with scripted STT and tone TTS, which is how the tests exercise VAD, end-pointing and barge-in.
 

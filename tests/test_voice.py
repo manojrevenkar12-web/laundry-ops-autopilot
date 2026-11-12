@@ -206,3 +206,29 @@ def test_voice_api_twilio_and_demo(settings):
     d = c.post("/voice/demo/turn", json={"call_id": d["call_id"], "text": "", "dtmf": "4"}).json()
     assert d["state"] in ("ANYTHING_ELSE", "HANDOFF")
     assert c.get("/voice/calls").json()["metrics"]["calls"] >= 0
+
+
+def test_finished_call_ignores_late_audio_and_keeps_outcome(platform, now):
+    _with_phones(platform)
+    v = platform.voice
+    v.start("CA10", "+4915100000001", now)
+    t = v.step("CA10", "Der Trockner hat meinen Pullover zerrissen", now=now)
+    assert t.handoff
+    t2 = v.step("CA10", "nein danke das war's", now=now)
+    assert t2.done and t2.say == ""
+    assert platform.store.call_metrics() == {"calls": 1, "contained": 0, "containment_rate": 0.0, "avg_turns": 1.0,
+                                             "handoff_reasons": {"ESC_DAMAGE_CLAIM": 1}}
+
+
+def test_staged_scenarios_run_end_to_end(platform, now):
+    from laundryops.demo_stage import SCENARIOS, stage
+    v = platform.voice
+    info = stage(platform, "door_locked", "de", now)
+    n = int(info["machine"]["label"].split()[-1])
+    v.start("S1", info["from_number"], now)
+    assert v.step("S1", "Ich hab bezahlt, aber die Tür geht nicht auf.", now=now).state == "ASK_MACHINE"
+    assert v.step("S1", f"die {n}", now=now).state == "VERIFY_RELAY"
+    t = v.step("S1", "Nein, immer noch zu.", now=now)
+    assert "3 Euro 50" in t.say and v.calls["S1"].last_outcome.decision.reason_codes[0] == "EV_RETRIGGER_CONFIRMED_FAILED"
+    for sc in SCENARIOS:
+        stage(platform, sc, "en", now)            # every scenario stages without error

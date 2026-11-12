@@ -1,6 +1,10 @@
 # 3-minute demo script (Loom / live)
 
-**Setup before recording:** `laundryops serve`, then `curl -X POST localhost:8000/demo/seed?n=120`, open `http://127.0.0.1:8000/console` in Chrome (for the hotline demo's speech), window at 1440×900, console zoom 110 %. Have one resident with two recent bookings ready (the seeded user list includes several). Microphone on. Second tab: the GitHub repo README.
+**Setup before recording:** `laundryops serve`, then `curl -X POST localhost:8000/demo/seed?n=120`, open `http://127.0.0.1:8000/console` in Chrome (for the hotline demo's speech), window at 1440×900, console zoom 110 %. Microphone on. Second tab: the GitHub repo README.
+
+**Never call as a seeded resident** — their bookings were already handled by the seeding run. In the *Hotline demo* panel pick a scenario (door locked), press **Stage**: it creates a fresh resident, selects them as the caller and tells you the machine number to say. Stage again for every take.
+
+**Rehearse first, without a browser:** `laundryops call --scenario door_locked` (also `aborted`, `double_charge`, `refund_status`, `damage`, `unknown_caller`; `--lang en`) runs the same dialog in the terminal — type the caller lines, see the agent's lines, the SMS, the whisper and the resulting ticket. Do this until the four lines come out without reading.
 
 Timing is for a 3:00 cut; the bracketed lines are what you say.
 
@@ -26,10 +30,10 @@ Scroll the drawer to the reason codes and the audit trail.
 
 **0:55 – 1:50 · One call**
 
-In *Hotline demo*: pick the resident with two bookings, press *Call the hotline*. Speak naturally.
+In *Hotline demo*: scenario *door locked*, **Stage**, then *Call the hotline*. Speak naturally; say the machine number the stage hint shows (it changes each time).
 
 - Agent greets by name. You: **"Hallo, ich hab bezahlt, aber die Tür geht nicht auf."**
-- Agent asks which machine. You: **"Die drei."**
+- Agent asks which machine. You: **"Die zwei."** (or whatever the hint says)
 - Agent: re-released, is the door open now? You: **"Nein, immer noch zu."**
 - Agent: refunded three euros fifty, fault report sent to the building manager, anything else? You: **"Nein, danke."**
 
@@ -66,5 +70,7 @@ End on the console.
 ## If something goes wrong live
 
 - Speech recognition not available (Firefox/Safari): type the caller lines into the text field; the dialog is identical.
-- The relay demo must show a *failed* release for the refund path: the seeded world has machines with planted relay faults; pick a resident whose booking is on one (the drawer shows `EV_RELAY_NOT_ENGAGED → retrigger FAIL → refund`). Or simply answer "nein" at the verify question — that is the voice path shown above.
+- Said the wrong machine number? The agent hands over ("konnten den Vorgang nicht zuordnen") — correct behaviour, but not the take you want. Stage again and read the number from the hint.
+- For the refund path without the verify turn, stage *relay fault*: the re-trigger fails on the box and the agent refunds + opens the fault ticket in one turn.
+- Browser speech mishears a number? Type it into the text field; the dialog is identical.
 - Keep the *Try a ticket* fallback text ready in a notes file; never type live.

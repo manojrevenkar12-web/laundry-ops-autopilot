@@ -262,6 +262,22 @@ def demo_seed(n: int = Query(120, le=2000), seed: int = 42) -> dict[str, Any]:
     return {"seeded_tickets": len(scenarios), "metrics": platform.store.metrics()}
 
 
+@app.post("/demo/stage")
+def demo_stage(scenario: str = Query("door_locked"), language: str = Query("de")) -> dict[str, Any]:
+    """Create a fresh, un-handled demo resident + booking for the hotline / ticket demo. Returns who to call as."""
+    from laundryops.demo_stage import SCENARIOS, stage
+
+    if scenario not in SCENARIOS:
+        raise HTTPException(400, f"unknown scenario; one of {sorted(SCENARIOS)}")
+    return stage(platform, scenario, language)
+
+
+@app.get("/demo/scenarios")
+def demo_scenarios() -> dict[str, str]:
+    from laundryops.demo_stage import SCENARIOS
+    return SCENARIOS
+
+
 @app.get("/demo/users")
 def demo_users(limit: int = 20) -> list[dict[str, Any]]:
     users = [u for u in platform.directory.users.values() if not u.user_id.startswith("bg_")] or list(platform.directory.users.values())
